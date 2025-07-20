@@ -1,0 +1,200 @@
+{% load static %}
+<!DOCTYPE html>
+<!--
+	Arcana by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+  <head>
+    <title>AIBIM-CostEstimator</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <!-- Bootstrap CSS -->
+
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css'%}" />
+  </head>
+
+  <body class="is-preload">
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <h1>
+          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li><a href="/">홈</a></li>
+            <li class="current">
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/sd_by_input/">AI 개산견적(개요정보기반)</a>
+                </li>
+                <li>
+                  <a href="#">AI 개산견적(사용자정의 AI모델 기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="#">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="#">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+      <div id="nav_sub">
+        <h6 class="text-center">
+          <b>AI개산견적</b>
+          <span>- 개요정보기반</span>
+        </h6>
+      </div>
+
+      <!-- sd_by_ifc -->
+      <div class="container">
+        <div class="input-form-backgroud row">
+          <div class="input-form col-md-12 mx-auto">
+            <h3 class="mb-3">개요정보 입력</h3>
+            <form class="validation-form" method="POST">
+              {% csrf_token %}
+              <div class="mb-3">
+                <label for="project_name">프로젝트 이름</label>
+                <input
+                  name="project_name"
+                  type="text"
+                  class="form-control"
+                  id="project_name"
+                  placeholder=""
+                  required
+                />
+                <div class="invalid-feedback">
+                  프로젝트 이름을 입력해주세요.
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label for="total_room_count">실 개수</label>
+                  <input
+                    name="total_room_count"
+                    type="number"
+                    class="form-control"
+                    id="total_room_count"
+                    placeholder=""
+                    required
+                  />
+                  <div class="invalid-feedback">
+                    계획할 실의 개수를 입력해주세요.
+                  </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label for="total_area">연면적(m2)</label>
+                  <input
+                    name="total_area"
+                    type="number"
+                    class="form-control"
+                    id="total_area"
+                    placeholder=""
+                    required
+                  />
+                  <div class="invalid-feedback">
+                    연면적을 제곱미터단위로 입력해주세요.
+                  </div>
+                </div>
+              </div>
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label for="ground_level">지상층수</label>
+                  <input
+                    name="ground_level"
+                    type="number"
+                    class="form-control"
+                    id="ground_level"
+                    placeholder=""
+                    required
+                  />
+                  <div class="invalid-feedback">지상층수를 입력해주세요.</div>
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label for="basement_level">지하층수</label>
+                  <input
+                    name="basement_level"
+                    type="number"
+                    class="form-control"
+                    id="basement_level"
+                    placeholder=""
+                    required
+                  />
+                  <div class="invalid-feedback">지하층수를 입력해주세요.</div>
+                </div>
+              </div>
+              <div class="mb-3">
+                <label for="site_area">대지면적(m2)</label>
+                <input
+                  name="site_area"
+                  type="number"
+                  class="form-control"
+                  id="site_area"
+                  placeholder=""
+                  required
+                />
+                <div class="invalid-feedback">
+                  대지면적을 제곱미터 단위로 입력해주세요.
+                </div>
+              </div>
+              <div class="mb-3">
+                <label for="budget">예산(원)</label>
+                <input
+                  name="budget"
+                  type="number"
+                  class="form-control"
+                  id="budget"
+                  placeholder=""
+                  required
+                />
+                <div class="invalid-feedback">
+                  사용가능한 예산을 입력해주세요.
+                </div>
+              </div>
+              <button class="btn btn-primary btn-lg btn-block" type="submit">
+                공사비 예측
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
+  </body>
+</html>

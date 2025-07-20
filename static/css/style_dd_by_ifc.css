@@ -1,0 +1,397 @@
+/* 아래 코드는 static/css/style_dd_by_ifc.css 파일 내용임 */
+
+body {
+  font-family: "Segoe UI", Arial, sans-serif;
+  margin: 0;
+}
+#viewer {
+  width: 70vw; /* 원하는 가로크기 (ex. 70%) */
+  height: 400px; /* 원하는 세로크기 */
+  background: #fff;
+  border: 1px solid #ccc;
+  margin: 24px auto 12px auto;
+  display: block;
+  position: relative;
+}
+
+button {
+  height: 40px;
+  padding-top: 0%;
+  background-color: #6f87a3;
+  background-blend-mode: color-burn;
+}
+.btn-slim {
+  height: 25px;
+  transform-style: flat;
+}
+.cnv_divide {
+  font-size: small;
+  color: #ffffff;
+  height: 30px;
+  background-color: #32425a;
+  font-weight: bold;
+  width: 100%;
+}
+.cnv_divide:hover {
+  background-color: #6f87a3;
+}
+#loadIfCBtn {
+  background-color: #6f87a3;
+}
+.top-bar_ {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #32425a;
+  color: #fff;
+}
+.top-bar_ label {
+  margin-right: 4px;
+}
+.container_detail {
+  display: flex;
+  height: calc(100vh - 110px);
+  padding-left: 10px;
+  padding-right: 10px;
+  height: fit-content;
+}
+.left-panel {
+  padding-right: 10px;
+
+  .container {
+    text-align: center; /* 텍스트 및 인라인 블록 요소 중앙 정렬 */
+  }
+
+  .container_detail button {
+    display: inline-block; /* 또는 display: block; */
+    /* 필요한 경우 추가 스타일 지정 */
+  }
+  width: 20%;
+  border-right: 1px solid #bebebe;
+  display: flex;
+  flex-direction: column;
+}
+.group-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+  background: #f6f8fa;
+}
+.ifc-table {
+  flex: 1;
+  overflow-y: auto;
+}
+.ifc-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ifc-table th,
+.ifc-table td {
+  border: 1px solid #ddd;
+  padding: 6px;
+}
+.ifc-table th {
+  background: #eee;
+}
+.search-results {
+  height: 70px;
+  overflow-y: auto;
+  margin: 8px 0;
+  border: 1px solid #ccc;
+  background: #fafafa;
+}
+.search-results li {
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.search-results li.selected,
+.search-results li:hover {
+  background: #b3d0ff;
+}
+.right-panel {
+  width: 70%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+}
+.code-detail-table,
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 6px;
+}
+.code-detail-table th,
+.code-detail-table td,
+.summary-table th,
+.summary-table td {
+  border: 1px solid #ddd;
+  padding: 4px;
+}
+.summary-table th {
+  background: #f2f4fc;
+}
+.summary-table .group-row {
+  background: #d6e1fa;
+  font-weight: bold;
+}
+.total-label,
+.summary-total-label {
+  font-weight: bold;
+  margin: 6px 0;
+}
+.hidden {
+  display: none;
+}
+.group-row {
+  cursor: pointer;
+}
+/* Scroll styles */
+.ifc-table,
+.right-panel,
+.summary-table {
+  scrollbar-width: thin;
+}
+.ifc-objects-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 11px; /* 글자 크기 축소 */
+}
+
+.ifc-objects-table th,
+.ifc-objects-table td {
+  border: 1px solid #ddd;
+  padding: 3px 6px; /* 패딩 축소 */
+  text-align: left;
+  height: 24px; /* 높이 축소 */
+  vertical-align: middle;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ifc-objects-table th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+  height: 28px; /* 헤더 높이 축소 */
+  font-size: 10px; /* 헤더 글자 크기 더 작게 */
+}
+
+.ifc-objects-table tbody tr {
+  height: 24px;
+}
+
+.ifc-objects-table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.ifc-objects-table tbody tr:hover {
+  background-color: #e8f4fd;
+  cursor: pointer;
+}
+
+.ifc-objects-table tbody tr.selected {
+  background-color: #007bff !important;
+  color: white;
+}
+
+.group-header {
+  background-color: #e0e0e0 !important;
+  font-weight: bold;
+  cursor: pointer;
+  height: 28px !important;
+  font-size: 11px;
+}
+
+.group-header:hover {
+  background-color: #d0d0d0 !important;
+}
+
+.group-header td {
+  height: 28px !important;
+  line-height: 28px !important;
+}
+
+.search-results {
+  max-height: 180px; /* 높이 축소 */
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px; /* 글자 크기 축소 */
+}
+
+.search-results li {
+  padding: 6px; /* 패딩 축소 */
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.search-results li:hover {
+  background-color: #f0f0f0;
+}
+
+.search-results li.selected {
+  background-color: #007bff;
+  color: white;
+}
+
+.code-detail-table {
+  font-size: 11px; /* 상세 테이블 글자 크기 축소 */
+}
+
+.code-detail-table th,
+.code-detail-table td {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.code-detail-table tbody tr.selected {
+  background-color: #007bff;
+  color: white;
+}
+
+.summary-table {
+  font-size: 11px; /* 요약 테이블 글자 크기 축소 */
+}
+
+.summary-table th,
+.summary-table td {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+/* 컬럼 선택 영역 스타일 */
+.column-selector {
+  margin-top: 15px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+}
+
+.column-selector h4 {
+  font-size: 12px;
+  margin: 0 0 8px 0;
+  color: #333;
+}
+
+.column-checkboxes {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.column-checkbox {
+  display: flex;
+  align-items: center;
+  margin-bottom: 3px;
+  font-size: 10px;
+}
+
+.column-checkbox input[type="checkbox"] {
+  margin-right: 6px;
+  transform: scale(0.8);
+}
+
+.column-checkbox label {
+  cursor: pointer;
+  flex: 1;
+  font-size: 10px;
+}
+
+.column-buttons {
+  display: flex;
+  gap: 5px;
+}
+
+.btn-small {
+  padding: 3px 8px;
+  font-size: 10px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.btn-small:hover {
+  background-color: #5a6268;
+}
+
+/* 입력 필드들 글자 크기 축소 */
+input[type="text"],
+select {
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+/* 그룹 바 스타일 조정 */
+.group-bar {
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.group-bar label {
+  margin-right: 10px;
+  font-size: 11px;
+}
+
+.group-bar select {
+  margin-right: 15px;
+  font-size: 10px;
+  padding: 2px 4px;
+}
+
+.hidden {
+  display: none;
+}
+
+.left-panel {
+  width: 30%;
+  padding-right: 15px;
+}
+
+.right-panel {
+  width: 70%;
+}
+
+.container_detail {
+  display: flex;
+  margin: 15px 0;
+}
+
+.btn {
+  margin: 4px;
+  padding: 6px 12px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.btn:hover {
+  background-color: #0056b3;
+}
+
+.btn-block {
+  width: 100%;
+  padding: 10px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-block:hover {
+  background-color: #218838;
+}

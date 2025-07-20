@@ -1,0 +1,156 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>IFC AI 예측 프로젝트 목록</title>
+    <meta charset="utf-8" />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css'%}" />
+  </head>
+  <body>
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <!-- Logo -->
+        <h1>
+          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li><a href="">홈</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li class="current">
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+
+    <div class="container mt-5">
+      <h2 class="text-center mb-4">IFC AI 예측 프로젝트 목록</h2>
+
+      <div class="text-center mb-4">
+        <a
+          href="{% url 'ifc_ai_prediction:upload_ifc' %}"
+          class="btn btn-primary"
+        >
+          새 프로젝트 업로드
+        </a>
+      </div>
+
+      {% if error_message %}
+      <div class="alert alert-danger">{{ error_message }}</div>
+      {% endif %} {% if debug_info %}
+      <div class="alert alert-info">{{ debug_info }}</div>
+      {% endif %} {% if projects %}
+      <div class="row">
+        {% for project in projects %}
+        <div class="col-md-4 mb-4">
+          <div class="card">
+            <div class="card-header bg-primary text-white">
+              <h5 class="mb-0">{{ project.name }}</h5>
+            </div>
+            <div class="card-body">
+              <p class="text-muted">
+                생성일: {{ project.created_at|date:"Y-m-d H:i" }}
+              </p>
+
+              {% if project.description %}
+              <p>{{ project.description }}</p>
+              {% endif %}
+
+              <p>
+                <strong>객체 수:</strong> {{ project.summary.total_count }}개
+              </p>
+
+              {% if project.is_processed %}
+              <span class="badge badge-success">처리 완료</span>
+              {% elif project.processing_error %}
+              <span class="badge badge-danger">처리 오류</span>
+              {% else %}
+              <span class="badge badge-warning">처리 중</span>
+              {% endif %}
+
+              <div class="mt-3">
+                {% if project.is_processed %}
+                <a
+                  href="{% url 'ifc_ai_prediction:prediction_page' project.id %}"
+                  class="btn btn-success btn-sm"
+                >
+                  AI 예측하기
+                </a>
+                <a
+                  href="{% url 'ifc_ai_prediction:prediction_history' project.id %}"
+                  class="btn btn-secondary btn-sm"
+                >
+                  예측 이력
+                </a>
+                {% else %}
+                <button class="btn btn-secondary btn-sm" disabled>
+                  처리 중...
+                </button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="alert alert-info text-center">
+        <h4>업로드된 프로젝트가 없습니다</h4>
+        <p>IFC 파일을 업로드하여 AI 예측을 시작해보세요.</p>
+        <a
+          href="{% url 'ifc_ai_prediction:upload_ifc' %}"
+          class="btn btn-primary"
+        >
+          첫 번째 프로젝트 업로드하기
+        </a>
+      </div>
+      {% endif %}
+    </div>
+    <!-- Scripts -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
+  </body>
+</html>

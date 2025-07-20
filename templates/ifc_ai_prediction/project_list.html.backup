@@ -1,0 +1,399 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>IFC AI 예측 - 프로젝트 목록</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+    <style>
+      .nav-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px 0;
+        margin-bottom: 30px;
+      }
+      .nav-links {
+        text-align: center;
+      }
+      .nav-links a {
+        color: white;
+        text-decoration: none;
+        margin: 0 15px;
+        padding: 8px 16px;
+        border-radius: 4px;
+        transition: background 0.3s ease;
+      }
+      .nav-links a:hover,
+      .nav-links a.active {
+        background: rgba(255, 255, 255, 0.2);
+        text-decoration: none;
+        color: white;
+      }
+      .project-card {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+      .project-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.15);
+      }
+      .project-header {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 8px 8px 0 0;
+      }
+      .project-body {
+        padding: 20px;
+      }
+      .project-title {
+        font-size: 1.4em;
+        font-weight: 600;
+        margin-bottom: 5px;
+      }
+      .project-meta {
+        font-size: 0.9em;
+        opacity: 0.9;
+      }
+      .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 15px;
+        font-size: 0.8em;
+        font-weight: 600;
+        margin-bottom: 10px;
+      }
+      .status-processed {
+        background: #d4edda;
+        color: #155724;
+      }
+      .status-processing {
+        background: #fff3cd;
+        color: #856404;
+      }
+      .status-error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .object-summary {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 15px 0;
+      }
+      .object-count {
+        font-size: 1.2em;
+        font-weight: 600;
+        color: #495057;
+      }
+      .class-counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .class-tag {
+        background: #e9ecef;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        color: #495057;
+      }
+      .btn-predict {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 10px 25px;
+        border-radius: 6px;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.3s ease;
+        font-weight: 600;
+      }
+      .btn-predict:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        color: white;
+        text-decoration: none;
+      }
+      .btn-predict:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+      }
+      .btn-history {
+        background: #17a2b8;
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 6px;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.3s ease;
+        margin-left: 10px;
+      }
+      .btn-history:hover {
+        background: #138496;
+        color: white;
+        text-decoration: none;
+      }
+      .upload-prompt {
+        text-align: center;
+        padding: 60px 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      .upload-prompt i {
+        font-size: 4em;
+        color: #667eea;
+        margin-bottom: 20px;
+      }
+      .btn-upload-new {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        border: none;
+        padding: 12px 30px;
+        border-radius: 6px;
+        text-decoration: none;
+        display: inline-block;
+        transition: all 0.3s ease;
+        font-weight: 600;
+        margin-top: 20px;
+      }
+      .btn-upload-new:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        color: white;
+        text-decoration: none;
+      }
+      .error-details {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 10px;
+        font-size: 0.9em;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 네비게이션 헤더 -->
+    <div class="nav-header">
+      <div class="container">
+        <div class="nav-links">
+          <a href="/">홈</a>
+          <a href="{% url 'ifc_ai_prediction:project_list' %}" class="active"
+            >프로젝트 목록</a
+          >
+          <a href="{% url 'ifc_ai_prediction:upload_ifc' %}">IFC 업로드</a>
+          <a href="/ai_learning/">AI 모델 관리</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 style="color: #2c3e50; margin: 0">
+          <i class="fas fa-project-diagram"></i>
+          IFC AI 예측 프로젝트
+        </h2>
+        <a
+          href="{% url 'ifc_ai_prediction:upload_ifc' %}"
+          class="btn-upload-new"
+        >
+          <i class="fas fa-plus"></i>
+          새 프로젝트 업로드
+        </a>
+      </div>
+
+      <!-- 오류 메시지 표시 -->
+      {% if error_message %}
+      <div class="alert alert-danger">
+        <strong>오류:</strong> {{ error_message }}
+      </div>
+      {% endif %}
+
+      <!-- 메시지 표시 -->
+      {% if messages %} {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+        {{ message }}
+        <button type="button" class="close" data-dismiss="alert">
+          <span>&times;</span>
+        </button>
+      </div>
+      {% endfor %} {% endif %}
+
+      <!-- 프로젝트 목록 -->
+      {% if projects %} {% for project in projects %}
+      <div class="project-card">
+        <div class="project-header">
+          <div class="project-title">{{ project.name }}</div>
+          <div class="project-meta">
+            생성일: {{ project.created_at|date:"Y-m-d H:i" }} {% if
+            project.description %}
+            <br />{{ project.description }} {% endif %}
+          </div>
+        </div>
+
+        <div class="project-body">
+          <!-- 처리 상태 -->
+          {% if project.is_processed %}
+          <span class="status-badge status-processed">
+            <i class="fas fa-check-circle"></i> 처리 완료
+          </span>
+          {% elif project.processing_error %}
+          <span class="status-badge status-error">
+            <i class="fas fa-exclamation-triangle"></i> 처리 오류
+          </span>
+          {% else %}
+          <span class="status-badge status-processing">
+            <i class="fas fa-spinner fa-spin"></i> 처리 중
+          </span>
+          {% endif %}
+
+          <!-- 객체 요약 정보 -->
+          {% if project.summary.is_processed %}
+          <div class="object-summary">
+            <div class="object-count">
+              <i class="fas fa-cube"></i>
+              총 {{ project.summary.total_count }}개 객체
+            </div>
+
+            {% if project.summary.class_counts %}
+            <div class="class-counts">
+              {% for class_name, count in project.summary.class_counts.items %}
+              <span class="class-tag"> {{ class_name }}: {{ count }}개 </span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          <!-- 오류 메시지 -->
+          {% if project.processing_error %}
+          <div class="error-details">
+            <strong>오류 내용:</strong><br />
+            {{ project.processing_error }}
+          </div>
+          {% endif %}
+
+          <!-- 액션 버튼들 -->
+          <div class="mt-3">
+            {% if project.is_processed %}
+            <a
+              href="{% url 'ifc_ai_prediction:prediction_page' project.id %}"
+              class="btn-predict"
+            >
+              <i class="fas fa-brain"></i>
+              AI 예측하기
+            </a>
+            <a
+              href="{% url 'ifc_ai_prediction:prediction_history' project.id %}"
+              class="btn-history"
+            >
+              <i class="fas fa-history"></i>
+              예측 이력
+            </a>
+            {% else %}
+            <button class="btn-predict" disabled>
+              <i class="fas fa-clock"></i>
+              처리 대기 중
+            </button>
+            {% endif %}
+          </div>
+
+          <!-- 파일 정보 -->
+          <div class="mt-3">
+            <small class="text-muted">
+              <i class="fas fa-file"></i>
+              IFC 파일: {{ project.ifc_file.name|slice:"20:" }} {% if
+              project.converted_obj %} | <i class="fas fa-cube"></i> 3D 모델:
+              변환 완료 {% endif %}
+            </small>
+          </div>
+        </div>
+      </div>
+      {% endfor %} {% else %}
+      <div class="upload-prompt">
+        <i class="fas fa-cloud-upload-alt"></i>
+        <h3 style="color: #667eea; margin-bottom: 15px">
+          아직 업로드된 프로젝트가 없습니다
+        </h3>
+        <p style="color: #6c757d; margin-bottom: 0">
+          IFC 파일을 업로드하여 AI 기반 예측을 시작해보세요.<br />
+          건물 정보 모델(BIM)에서 자동으로 데이터를 추출하여<br />
+          인공지능 모델의 입력값으로 활용할 수 있습니다.
+        </p>
+        <a
+          href="{% url 'ifc_ai_prediction:upload_ifc' %}"
+          class="btn-upload-new"
+        >
+          <i class="fas fa-plus"></i>
+          첫 번째 프로젝트 업로드하기
+        </a>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <!-- FontAwesome 무료 버전 사용 -->
+    <script
+      src="https://kit.fontawesome.com/a076d05399.js"
+      crossorigin="anonymous"
+    ></script>
+
+    <script>
+      $(document).ready(function () {
+        // 처리 중인 프로젝트가 있으면 자동 새로고침 (30초마다)
+        const hasProcessingProject = $(".status-processing").length > 0;
+
+        if (hasProcessingProject) {
+          console.log(
+            "처리 중인 프로젝트가 있습니다. 30초마다 자동 새로고침합니다."
+          );
+
+          setInterval(function () {
+            window.location.reload();
+          }, 30000);
+
+          // 사용자에게 알림 표시
+          $(
+            '<div class="alert alert-info alert-dismissible fade show" style="margin-bottom: 20px;">' +
+              '<i class="fas fa-info-circle"></i> ' +
+              "처리 중인 프로젝트가 있습니다. 페이지가 자동으로 새로고침됩니다." +
+              '<button type="button" class="close" data-dismiss="alert"><span>&times;</span></button>' +
+              "</div>"
+          ).insertBefore(".container > .d-flex");
+        }
+
+        // 카드 호버 효과 개선
+        $(".project-card").hover(
+          function () {
+            $(this)
+              .find(".btn-predict, .btn-history")
+              .css("transform", "scale(1.05)");
+          },
+          function () {
+            $(this)
+              .find(".btn-predict, .btn-history")
+              .css("transform", "scale(1)");
+          }
+        );
+      });
+    </script>
+  </body>
+</html>

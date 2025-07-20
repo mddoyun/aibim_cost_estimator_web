@@ -1,0 +1,536 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>AI 예측 - {{ ai_model.name }}</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css'%}" />
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  </head>
+  <body class="is-preload">
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <!-- Logo -->
+        <h1>
+          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li class="current"><a href="">홈</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+
+      <!-- Main Content -->
+      <div class="container mt-4">
+        <div class="row">
+          <div class="col-md-8">
+            <div class="card">
+              <div class="card-header">
+                <h5 class="mb-0">{{ ai_model.name }} - 예측</h5>
+                <small class="text-muted">{{ ai_model.description }}</small>
+              </div>
+              <div class="card-body">
+                <!-- 모델 로딩 상태 -->
+                <div id="modelLoadingStatus" class="text-center mb-3">
+                  <div class="spinner-border text-primary" role="status"></div>
+                  <div class="mt-2">AI 모델을 로드하는 중...</div>
+                </div>
+
+                <!-- 입력 폼 -->
+                <div id="inputForm" style="display: none">
+                  <h6>입력 데이터</h6>
+                  <form id="predictionForm">
+                    <div id="inputFields"></div>
+                    <button type="submit" class="btn btn-primary mt-3">
+                      예측 실행
+                    </button>
+                  </form>
+                </div>
+
+                <!-- 예측 결과 -->
+                <!-- 기존 예측 결과 섹션을 다음과 같이 수정하세요 -->
+                <!-- 기존 코드 -->
+                <div id="predictionResult" style="display: none">
+                  <hr />
+                  <h6>예측 결과</h6>
+                  <div id="resultContent"></div>
+                  <div
+                    id="resultChart"
+                    style="height: 300px; margin-top: 20px"
+                  ></div>
+
+                  <!-- 이 부분 추가 -->
+                  <div class="text-center mt-3">
+                    <button
+                      type="button"
+                      class="btn btn-danger"
+                      id="downloadPdfBtn"
+                      onclick="downloadPDF()"
+                    >
+                      📄 PDF 보고서 다운로드
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <!-- 모델 정보 -->
+            <div class="card mb-3">
+              <div class="card-header">
+                <h6 class="mb-0">모델 정보</h6>
+              </div>
+              <div class="card-body">
+                <div class="mb-2">
+                  <strong>입력 변수:</strong><br />
+                  <span class="text-muted"
+                    >{{ ai_model.input_columns|join:", " }}</span
+                  >
+                </div>
+                <div class="mb-2">
+                  <strong>출력 변수:</strong><br />
+                  <span class="text-muted"
+                    >{{ ai_model.output_columns|join:", " }}</span
+                  >
+                </div>
+                <div class="mb-2">
+                  <strong>생성일:</strong><br />
+                  <span class="text-muted"
+                    >{{ ai_model.created_at|date:"Y-m-d H:i" }}</span
+                  >
+                </div>
+                <div id="modelMetrics" style="display: none">
+                  <hr />
+                  <h6>모델 성능</h6>
+                  <div class="small">
+                    <div>RMSE: <span id="rmseValue">-</span></div>
+                    <div>MAE: <span id="maeValue">-</span></div>
+                    <div>R² Score: <span id="r2Value">-</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 최근 예측 이력 -->
+            <div class="card">
+              <div class="card-header">
+                <h6 class="mb-0">최근 예측 이력</h6>
+              </div>
+              <div class="card-body">
+                {% if recent_predictions %}
+                <div class="small">
+                  {% for prediction in recent_predictions %}
+                  <div class="mb-2 p-2 border rounded">
+                    <div class="text-muted">
+                      {{ prediction.created_at|date:"m/d H:i" }}
+                    </div>
+                    <div>
+                      결과: {{ prediction.prediction_result.value|floatformat:2
+                      }}
+                    </div>
+                    <div class="text-muted">
+                      범위: {{ prediction.prediction_range.min|floatformat:2 }}
+                      ~ {{ prediction.prediction_range.max|floatformat:2 }}
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small">예측 이력이 없습니다.</p>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      let loadedModel = null;
+      let modelMetadata = null;
+      let resultChart = null;
+      let lastPredictionData = null; // PDF 생성용 데이터 저장
+
+      // 페이지 로드 시 모델 로드
+      window.addEventListener("load", async function () {
+        try {
+          await loadAIModel();
+          document.getElementById("modelLoadingStatus").style.display = "none";
+          document.getElementById("inputForm").style.display = "block";
+          document.getElementById("modelMetrics").style.display = "block";
+        } catch (error) {
+          console.error("모델 로드 실패:", error);
+          document.getElementById("modelLoadingStatus").innerHTML =
+            '<div class="alert alert-danger">모델 로드에 실패했습니다: ' +
+            error.message +
+            "</div>";
+        }
+      });
+
+      async function loadAIModel() {
+        // 모델 메타데이터 가져오기
+        const response = await fetch(
+          `/ai_prediction/api/model_metadata/{{ ai_model.id }}/`
+        );
+        modelMetadata = await response.json();
+
+        // 모델 성능 메트릭 표시
+        if (modelMetadata.rmse) {
+          document.getElementById("rmseValue").textContent =
+            modelMetadata.rmse.toFixed(4);
+          document.getElementById("maeValue").textContent =
+            modelMetadata.mae.toFixed(4);
+          document.getElementById("r2Value").textContent =
+            modelMetadata.r2_score.toFixed(4);
+        }
+
+        // ZIP 파일에서 모델 로드
+        const modelResponse = await fetch(modelMetadata.model_file_url);
+        const zipBlob = await modelResponse.blob();
+
+        const zip = new JSZip();
+        const zipContent = await zip.loadAsync(zipBlob);
+
+        // model.json 읽기
+        const modelJson = await zipContent.file("model.json").async("string");
+        const modelTopology = JSON.parse(modelJson);
+
+        // weights.bin 읽기
+        const weightsData = await zipContent
+          .file("weights.bin")
+          .async("uint8array");
+
+        // TensorFlow.js 모델 로드
+        loadedModel = await tf.loadLayersModel(
+          tf.io.fromMemory(modelTopology, weightsData)
+        );
+
+        // 입력 필드 생성
+        createInputFields();
+      }
+
+      function createInputFields() {
+        const container = document.getElementById("inputFields");
+        container.innerHTML = "";
+
+        modelMetadata.input_columns.forEach((column) => {
+          const div = document.createElement("div");
+          div.className = "mb-3";
+          div.innerHTML = `
+                    <label for="input_${column}" class="form-label">${column}</label>
+                    <input type="number" class="form-control" id="input_${column}" 
+                           name="${column}" step="any" required>
+                `;
+          container.appendChild(div);
+        });
+      }
+
+      document
+        .getElementById("predictionForm")
+        .addEventListener("submit", async function (e) {
+          e.preventDefault();
+
+          // 입력 데이터 수집
+          const inputData = {};
+          modelMetadata.input_columns.forEach((column) => {
+            const input = document.getElementById(`input_${column}`);
+            inputData[column] = parseFloat(input.value);
+          });
+
+          // 예측 실행
+          const inputArray = modelMetadata.input_columns.map(
+            (col) => inputData[col]
+          );
+          const inputTensor = tf.tensor2d([inputArray]);
+
+          const prediction = await loadedModel.predict(inputTensor);
+          const predictionArray = await prediction.data();
+          const predictionValue = predictionArray[0];
+
+          // 오차 범위 계산
+          const errorRange = calculateErrorRange(predictionValue);
+
+          // 결과 표시
+          displayResults(predictionValue, errorRange, inputData);
+
+          // 예측 결과 저장
+          await savePrediction(inputData, predictionValue, errorRange);
+
+          // 메모리 정리
+          inputTensor.dispose();
+          prediction.dispose();
+        });
+
+      function calculateErrorRange(prediction) {
+        // RMSE와 MAE를 활용한 오차 범위 계산
+        const rmse = modelMetadata.rmse || 0;
+        const mae = modelMetadata.mae || 0;
+
+        // 보수적인 추정을 위해 RMSE의 1.5배를 오차 범위로 사용
+        const errorMargin = rmse * 1.5;
+
+        return {
+          min: Math.max(0, prediction - errorMargin),
+          max: prediction + errorMargin,
+          confidence: Math.max(0, Math.min(1, 1 - rmse / prediction)),
+        };
+      }
+
+      function displayResults(prediction, errorRange, inputData) {
+        const resultContent = document.getElementById("resultContent");
+        const outputColumn = modelMetadata.output_columns[0];
+
+        // PDF 생성용 데이터 저장
+        lastPredictionData = {
+          inputData: inputData,
+          prediction: prediction,
+          errorRange: errorRange,
+          outputColumn: outputColumn,
+        };
+
+        resultContent.innerHTML = `
+                <div class="alert alert-info">
+                    <h5>예측 결과</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <strong>예측값</strong><br>
+                            <span class="h4 text-primary">${prediction.toFixed(
+                              2
+                            )}</span>
+                        </div>
+                        <div class="col-md-4">
+                            <strong>최소값</strong><br>
+                            <span class="h5 text-secondary">${errorRange.min.toFixed(
+                              2
+                            )}</span>
+                        </div>
+                        <div class="col-md-4">
+                            <strong>최대값</strong><br>
+                            <span class="h5 text-secondary">${errorRange.max.toFixed(
+                              2
+                            )}</span>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            신뢰도: ${(errorRange.confidence * 100).toFixed(1)}%
+                            (RMSE: ${modelMetadata.rmse.toFixed(4)})
+                        </small>
+                    </div>
+                </div>
+            `;
+
+        // 차트 표시
+        displayChart(prediction, errorRange);
+
+        document.getElementById("predictionResult").style.display = "block";
+      }
+
+      function displayChart(prediction, errorRange) {
+        const ctx = document.getElementById("resultChart");
+
+        if (resultChart) {
+          resultChart.destroy();
+        }
+
+        // Canvas 요소 생성
+        ctx.innerHTML = '<canvas id="chartCanvas"></canvas>';
+        const canvas = document.getElementById("chartCanvas");
+
+        resultChart = new Chart(canvas, {
+          type: "bar",
+          data: {
+            labels: ["예측 결과"],
+            datasets: [
+              {
+                label: "최소값",
+                data: [errorRange.min],
+                backgroundColor: "rgba(255, 99, 132, 0.5)",
+                borderColor: "rgba(255, 99, 132, 1)",
+                borderWidth: 1,
+              },
+              {
+                label: "예측값",
+                data: [prediction],
+                backgroundColor: "rgba(54, 162, 235, 0.8)",
+                borderColor: "rgba(54, 162, 235, 1)",
+                borderWidth: 2,
+              },
+              {
+                label: "최대값",
+                data: [errorRange.max],
+                backgroundColor: "rgba(255, 206, 86, 0.5)",
+                borderColor: "rgba(255, 206, 86, 1)",
+                borderWidth: 1,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true,
+              },
+            },
+          },
+        });
+      }
+
+      async function savePrediction(inputData, prediction, errorRange) {
+        const data = {
+          input_data: inputData,
+          prediction_result: { value: prediction },
+          prediction_range: errorRange,
+        };
+
+        try {
+          await fetch(`/ai_prediction/api/save_prediction/{{ ai_model.id }}/`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+          });
+        } catch (error) {
+          console.error("예측 결과 저장 실패:", error);
+        }
+      }
+
+      // PDF 다운로드 함수
+      async function downloadPDF() {
+        if (!lastPredictionData) {
+          alert("예측 결과가 없습니다. 먼저 예측을 실행해주세요.");
+          return;
+        }
+
+        // 버튼과 원래 HTML을 try 바깥에서 잡아두기
+        const btn = document.getElementById("downloadPdfBtn");
+        const originalHtml = btn.innerHTML;
+
+        // 로딩 상태 표시
+        btn.innerHTML =
+          '<span class="spinner-border spinner-border-sm" role="status"></span> PDF 생성 중...';
+        btn.disabled = true;
+
+        try {
+          // 차트 이미지를 base64로 추출
+          const chartImage = await getChartAsImage();
+
+          // 서버에 PDF 생성 요청
+          const pdfData = {
+            input_data: lastPredictionData.inputData,
+            prediction_result: { value: lastPredictionData.prediction },
+            prediction_range: lastPredictionData.errorRange,
+            chart_image: chartImage,
+          };
+
+          const response = await fetch(
+            `/ai_prediction/api/generate_pdf/{{ ai_model.id }}/`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(pdfData),
+            }
+          );
+
+          if (!response.ok) {
+            const error = await response.json();
+            alert("PDF 생성에 실패했습니다: " + error.error);
+            return; // 실패 시 조기 종료
+          }
+
+          // 성공: PDF 다운로드
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `prediction_report_${new Date()
+            .toISOString()
+            .slice(0, 10)}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error("PDF 다운로드 오류:", err);
+          alert("PDF 다운로드 중 오류가 발생했습니다.");
+        } finally {
+          // 버튼 상태 복원
+          btn.innerHTML = originalHtml;
+          btn.disabled = false;
+        }
+      }
+
+      // 차트를 base64 이미지로 변환
+      async function getChartAsImage() {
+        return new Promise((resolve) => {
+          if (!resultChart) {
+            resolve("");
+            return;
+          }
+
+          const canvas = document.getElementById("chartCanvas");
+          if (!canvas) {
+            resolve("");
+            return;
+          }
+
+          // 차트를 이미지로 변환
+          const imageData = canvas.toDataURL("image/png");
+          resolve(imageData);
+        });
+      }
+    </script>
+    <!-- Scripts -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
+  </body>
+</html>

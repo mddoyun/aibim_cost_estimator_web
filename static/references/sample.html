@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Simple IFC Viewer (Three.js + web-ifc-three)</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      #viewer-container {
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      #upload-bar {
+        position: absolute;
+        z-index: 10;
+        top: 20px;
+        left: 20px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 12px 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px #0001;
+        font-family: sans-serif;
+      }
+      #file-input {
+        font-size: 1em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="upload-bar">
+      <input type="file" id="file-input" accept=".ifc" />
+      <span style="font-size: 0.95em; color: #444">.ifc 파일 선택</span>
+    </div>
+    <div id="viewer-container"></div>
+
+    <!-- Three.js -->
+    <script type="module">
+      import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js";
+      import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/controls/OrbitControls.js";
+      import { IFCLoader } from "https://cdn.jsdelivr.net/npm/web-ifc-three@0.0.152/IFCLoader.module.js";
+      // ---- 이후 코드는 그대로 사용 ----
+
+      // 1. Three.js 기본 셋업
+      const container = document.getElementById("viewer-container");
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf5f6fa);
+
+      const camera = new THREE.PerspectiveCamera(
+        60,
+        window.innerWidth / window.innerHeight,
+        0.2,
+        1000
+      );
+      camera.position.set(10, 15, 30);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      container.appendChild(renderer.domElement);
+
+      // 2. 컨트롤
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      // 3. 라이트
+      const ambient = new THREE.AmbientLight(0xffffff, 0.85);
+      scene.add(ambient);
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+      dirLight.position.set(10, 20, 10);
+      scene.add(dirLight);
+
+      // 4. IFC 로더
+      const ifcLoader = new IFCLoader();
+      // 성능 높이려면 아래 경로를 명시적으로 넣어야함 (web-ifc.wasm 최신 버전 사용)
+      ifcLoader.ifcManager.setWasmPath(
+        "https://cdn.jsdelivr.net/npm/web-ifc@0.0.47/"
+      );
+
+      // 5. 파일 업로드 & IFC 로딩
+      document
+        .getElementById("file-input")
+        .addEventListener("change", async (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+          const url = URL.createObjectURL(file);
+
+          // 기존 IFC 지우기
+          ifcLoader.ifcManager.dispose();
+          while (scene.children.length > 0) scene.remove(scene.children[0]);
+          scene.add(ambient);
+          scene.add(dirLight);
+
+          const model = await ifcLoader.loadAsync(url);
+          scene.add(model);
+
+          // 모델의 바운딩 박스 기반으로 카메라 조정
+          const box = new THREE.Box3().setFromObject(model);
+          const size = box.getSize(new THREE.Vector3()).length();
+          const center = box.getCenter(new THREE.Vector3());
+          camera.near = size / 100;
+          camera.far = size * 10;
+          camera.position
+            .copy(center)
+            .add(new THREE.Vector3(size / 2, size / 2, size / 2));
+          camera.lookAt(center);
+          controls.target.copy(center);
+          controls.update();
+
+          URL.revokeObjectURL(url);
+        });
+
+      // 6. 렌더 루프
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      // 7. 창 리사이즈 대응
+      window.addEventListener("resize", () => {
+        const w = window.innerWidth,
+          h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      });
+    </script>
+  </body>
+</html>

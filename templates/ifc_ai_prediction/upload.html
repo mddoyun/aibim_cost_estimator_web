@@ -1,0 +1,400 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>IFC AI 예측 - IFC 업로드</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+    <style>
+      .upload-container {
+        max-width: 600px;
+        margin: 50px auto;
+        padding: 30px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+      .upload-title {
+        text-align: center;
+        margin-bottom: 30px;
+        color: #2c3e50;
+      }
+      .form-group label {
+        font-weight: 600;
+        color: #34495e;
+      }
+      .btn-upload {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px 30px;
+        font-size: 16px;
+        border-radius: 6px;
+        width: 100%;
+        transition: all 0.3s ease;
+      }
+      .btn-upload:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+      }
+      .file-input-wrapper {
+        position: relative;
+        overflow: hidden;
+        display: inline-block;
+        width: 100%;
+      }
+      .file-input {
+        position: absolute;
+        left: -9999px;
+      }
+      .file-input-label {
+        display: block;
+        padding: 10px 15px;
+        border: 2px dashed #ddd;
+        border-radius: 6px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: #f8f9fa;
+      }
+      .file-input-label:hover {
+        border-color: #007bff;
+        background: #e3f2fd;
+      }
+      .file-name {
+        margin-top: 10px;
+        font-size: 14px;
+        color: #666;
+      }
+      .nav-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px 0;
+        margin-bottom: 30px;
+      }
+      .nav-links {
+        text-align: center;
+      }
+      .nav-links a {
+        color: white;
+        text-decoration: none;
+        margin: 0 15px;
+        padding: 8px 16px;
+        border-radius: 4px;
+        transition: background 0.3s ease;
+      }
+      .nav-links a:hover {
+        background: rgba(255, 255, 255, 0.2);
+        text-decoration: none;
+        color: white;
+      }
+      .ai-model-upload {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 20px;
+        margin-top: 30px;
+      }
+      .ai-model-upload h5 {
+        color: #495057;
+        margin-bottom: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 네비게이션 헤더 -->
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <!-- Logo -->
+        <h1>
+          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li><a href="">홈</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li class="current">
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="upload-container">
+        <h2 class="upload-title">
+          <i class="fas fa-cloud-upload-alt"></i>
+          IFC 파일 업로드
+        </h2>
+
+        <!-- 메시지 표시 -->
+        {% if messages %} {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+          {{ message }}
+          <button type="button" class="close" data-dismiss="alert">
+            <span>&times;</span>
+          </button>
+        </div>
+        {% endfor %} {% endif %}
+
+        <form method="post" enctype="multipart/form-data" id="uploadForm">
+          {% csrf_token %}
+
+          <div class="form-group">
+            <label for="projectName">프로젝트명 *</label>
+            <input
+              type="text"
+              name="name"
+              id="projectName"
+              class="form-control"
+              placeholder="프로젝트 이름을 입력하세요"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="projectDescription">프로젝트 설명</label>
+            <textarea
+              name="description"
+              id="projectDescription"
+              class="form-control"
+              rows="3"
+              placeholder="프로젝트에 대한 설명을 입력하세요 (선택사항)"
+            ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>IFC 파일 *</label>
+            <div class="file-input-wrapper">
+              <input
+                type="file"
+                name="ifc_file"
+                id="ifcFile"
+                class="file-input"
+                accept=".ifc"
+                required
+              />
+              <label for="ifcFile" class="file-input-label">
+                <i class="fas fa-file-upload"></i><br />
+                클릭하여 IFC 파일을 선택하세요<br />
+                <small>(지원 형식: .ifc)</small>
+              </label>
+              <div class="file-name" id="fileName"></div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-upload" id="submitBtn">
+            <i class="fas fa-upload"></i>
+            업로드 및 처리 시작
+          </button>
+        </form>
+
+        <!-- AI 모델 업로드 섹션 -->
+        <div class="ai-model-upload">
+          <h5><i class="fas fa-robot"></i> AI 모델 업로드</h5>
+          <p class="text-muted">
+            예측에 사용할 AI 모델(.zip 파일)을 업로드할 수 있습니다.
+          </p>
+
+          <form id="aiModelUploadForm" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="row">
+              <div class="col-md-6">
+                <input
+                  type="text"
+                  name="name"
+                  class="form-control form-control-sm"
+                  placeholder="모델 이름"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <input
+                  type="file"
+                  name="model_file"
+                  class="form-control-file form-control-sm"
+                  accept=".zip"
+                  required
+                />
+              </div>
+            </div>
+            <div class="mt-2">
+              <textarea
+                name="description"
+                class="form-control form-control-sm"
+                rows="2"
+                placeholder="모델 설명 (선택사항)"
+              ></textarea>
+            </div>
+            <button type="submit" class="btn btn-sm btn-secondary mt-2">
+              AI 모델 업로드
+            </button>
+          </form>
+        </div>
+
+        <div class="mt-4 text-center">
+          <small class="text-muted">
+            업로드된 IFC 파일은 자동으로 3D 모델로 변환되며, 객체 정보가
+            추출됩니다.<br />
+            처리 시간은 파일 크기에 따라 달라질 수 있습니다.
+          </small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+    <script
+      src="https://kit.fontawesome.com/a076d05399.js"
+      crossorigin="anonymous"
+    ></script>
+
+    <script>
+      $(document).ready(function () {
+        // 파일 선택 처리
+        $("#ifcFile").change(function () {
+          const file = this.files[0];
+          if (file) {
+            $("#fileName").text(
+              `선택된 파일: ${file.name} (${(file.size / 1024 / 1024).toFixed(
+                2
+              )} MB)`
+            );
+            $(".file-input-label")
+              .html(
+                `
+                <i class="fas fa-check-circle" style="color: #28a745;"></i><br>
+                ${file.name}<br>
+                <small>다른 파일을 선택하려면 클릭하세요</small>
+                `
+              )
+              .css("border-color", "#28a745");
+          } else {
+            $("#fileName").text("");
+            $(".file-input-label")
+              .html(
+                `
+                <i class="fas fa-file-upload"></i><br>
+                클릭하여 IFC 파일을 선택하세요<br>
+                <small>(지원 형식: .ifc)</small>
+                `
+              )
+              .css("border-color", "#ddd");
+          }
+        });
+
+        // IFC 폼 제출 처리
+        $("#uploadForm").submit(function () {
+          const submitBtn = $("#submitBtn");
+          submitBtn.prop("disabled", true);
+          submitBtn.html(`
+            <i class="fas fa-spinner fa-spin"></i>
+            처리 중... 잠시만 기다려주세요
+          `);
+
+          setTimeout(function () {
+            if (submitBtn.prop("disabled")) {
+              alert(
+                "처리 시간이 오래 걸리고 있습니다. 페이지를 새로고침하여 결과를 확인해주세요."
+              );
+            }
+          }, 120000);
+        });
+
+        // AI 모델 업로드 처리
+        $("#aiModelUploadForm").submit(function (e) {
+          e.preventDefault();
+
+          const formData = new FormData(this);
+          const submitBtn = $(this).find('button[type="submit"]');
+          const originalText = submitBtn.text();
+
+          submitBtn.prop("disabled", true).text("업로드 중...");
+
+          fetch("/ifc_ai_prediction/api/upload_ai_model/", {
+            method: "POST",
+            body: formData,
+            headers: {
+              "X-CSRFToken": $("[name=csrfmiddlewaretoken]").val(),
+            },
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (data.success) {
+                alert("AI 모델이 성공적으로 업로드되었습니다!");
+                this.reset();
+              } else {
+                alert("오류: " + data.error);
+              }
+            })
+            .catch((error) => {
+              console.error("AI 모델 업로드 오류:", error);
+              alert("AI 모델 업로드 중 오류가 발생했습니다.");
+            })
+            .finally(() => {
+              submitBtn.prop("disabled", false).text(originalText);
+            });
+        });
+
+        // 드래그 앤 드롭 기능
+        const fileLabel = $(".file-input-label");
+
+        fileLabel.on("dragover", function (e) {
+          e.preventDefault();
+          $(this).css("border-color", "#007bff").css("background", "#e3f2fd");
+        });
+
+        fileLabel.on("dragleave", function (e) {
+          e.preventDefault();
+          $(this).css("border-color", "#ddd").css("background", "#f8f9fa");
+        });
+
+        fileLabel.on("drop", function (e) {
+          e.preventDefault();
+          const files = e.originalEvent.dataTransfer.files;
+          if (files.length > 0) {
+            $("#ifcFile")[0].files = files;
+            $("#ifcFile").trigger("change");
+          }
+          $(this).css("border-color", "#ddd").css("background", "#f8f9fa");
+        });
+      });
+    </script>
+  </body>
+</html>

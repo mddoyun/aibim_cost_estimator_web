@@ -1,0 +1,1382 @@
+{% load static %}
+<!DOCTYPE html>
+<!--  AIBIM Cost‑Estimator – 상세견적(DD) 결과 페이지  -->
+<html>
+  <head>
+    <title>AIBIM‑CostEstimator</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+
+    <!-- three.js / OrbitControls ES module importmap -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "{% static 'js/three.module.js' %}",
+          "three/examples/jsm/controls/OrbitControls.js": "{% static 'js/OrbitControls.js' %}"
+        }
+      }
+    </script>
+    <script
+      async
+      src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
+    ></script>
+
+    <!-- Pyodide + IfcOpenShell WASM -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.22.0a1/full/pyodide.js"></script>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="{% static 'css/style_dd_by_ifc.css' %}" />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css' %}" />
+  </head>
+
+  <body class="is-preload" data-project-id="{{ project.id }}">
+    <!-- ─────────────────────────────  상단 네비게이션 & 메뉴  ───────────────────────────── -->
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <!-- Logo -->
+        <h1>
+          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li><a href="">홈</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li class="curretnt">
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+      <div id="nav_sub">
+        <h6 class="text-center">
+          <b>AI+BIM 상세견적</b> <span>- IFC기반</span>
+        </h6>
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────  3D Viewer  ───────────────────────────── -->
+    <div class="view-container"><div id="viewer"></div></div>
+
+    <!-- ─────────────────────────────  전체 코드 요약 테이블  ───────────────────────────── -->
+    <div class="container" id="first_container">
+      <div id="result_container">
+        <div style="font-weight: bold">전체 코드 요약</div>
+        <table class="summary-table" id="summaryTable">
+          <thead>
+            <tr>
+              <th>공사코드</th>
+              <th>공종</th>
+              <th>명칭</th>
+              <th>규격</th>
+              <th>단위</th>
+              <th>수량</th>
+              <th>재료비</th>
+              <th>노무비</th>
+              <th>총금액</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="summary-total-label" id="summaryTotalLabel">
+          요약 총 금액: 0 원
+        </div>
+      </div>
+    </div>
+
+    <!-- 펼치기/접기 버튼 -->
+    <div>
+      <button class="cnv_divide" id="folding_line" onclick="foldingAction()">
+        펼치기
+      </button>
+    </div>
+
+    <!-- ─────────────────────────────  상세 패널 (코드 검색, 그룹핑, 상세 테이블)  ───────────────────────────── -->
+    <div id="container_detail_first" style="display: none">
+      <div class="container_detail">
+        <!-- 좌측 패널 -->
+        <div class="left-panel">
+          <ul class="search-results" id="searchResults"></ul>
+          <input type="text" id="searchBox" placeholder="공사코드 검색" />
+          <button class="btn" id="addCodeBtn">공사코드 추가</button>
+          <button class="btn" id="removeCodeBtn">공사코드 삭제</button>
+          <button class="btn" id="loadCodeBtn">코드리스트 열기</button>
+
+          <!-- 컬럼 선택 영역 -->
+          <div class="column-selector">
+            <h4>표시할 필드 선택</h4>
+            <div class="column-checkboxes" id="columnCheckboxes"></div>
+            <div class="column-buttons">
+              <button class="btn-small" id="selectAllColumnsBtn">
+                모두 선택
+              </button>
+              <button class="btn-small" id="deselectAllColumnsBtn">
+                모두 해제
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 우측 패널 -->
+        <div class="right-panel">
+          <div class="group-bar">
+            <label
+              >1단계 그룹:
+              <select id="groupBy1">
+                <option>없음</option>
+              </select>
+            </label>
+            <label
+              >2단계 그룹:
+              <select id="groupBy2">
+                <option>없음</option>
+              </select>
+            </label>
+            <label
+              >3단계 그룹:
+              <select id="groupBy3">
+                <option>없음</option>
+              </select>
+            </label>
+          </div>
+          <div
+            class="ifc-table"
+            id="ifcTablecontainer_"
+            style="max-height: 400px; overflow-y: auto"
+          ></div>
+        </div>
+      </div>
+
+      <!-- 상세 코드별 수량/금액 -->
+      <div class="container_detail">
+        <table class="code-detail-table" id="codeDetailTable">
+          <thead>
+            <tr>
+              <th>공사코드</th>
+              <th>명칭</th>
+              <th>규격</th>
+              <th>단위</th>
+              <th>산식</th>
+              <th>수량</th>
+              <th>단가</th>
+              <th>금액</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="total-label" id="totalLabel">총 금액: 0 원</div>
+        <div style="height: 12px"></div>
+      </div>
+
+      <!-- 수정된 IFC 다운로드 -->
+      <div>
+        <button class="btn-block" id="saveIFCBtn">
+          수정된 IFC 파일 다운로드
+        </button>
+      </div>
+    </div>
+
+    <!-- 숨겨진 파일 입력 -->
+    <div>
+      <div class="container">
+        <div class="top-bar"></div>
+        <div class="container_"></div>
+        <input type="file" id="codeFileInput" accept=".csv" class="hidden" />
+        <input type="file" id="ifcFileInput" accept=".ifc" class="hidden" />
+      </div>
+    </div>
+
+    <!-- ─────────────────────────────  공통 JS (jQuery 등)  ───────────────────────────── -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
+
+    <!-- ─────────────────────────────  펼치기/접기 함수  ───────────────────────────── -->
+    <script>
+      function foldingAction() {
+        const el = document.getElementById("container_detail_first");
+        if (el.style.display === "block" || el.style.display === "") {
+          el.style.display = "none";
+          document.getElementById("folding_line").innerText = "펼치기";
+        } else {
+          el.style.display = "block";
+          document.getElementById("folding_line").innerText = "접기";
+        }
+      }
+    </script>
+
+    <!-- ─────────────────────────────  견적/코드 UI 스크립트 (원래 로직)  ───────────────────────────── -->
+    <script>
+      // 전역 변수
+      const PROJECT_ID = parseInt(document.body.dataset.projectId) || 0;
+      let codeData = {};
+      let objectData = [];
+      let groupedObjects = [];
+      let collapsedGroups = new Set();
+      let selectedCode = null;
+      let selectedObjectIds = [];
+      let headers = [];
+      let visibleHeaders = []; // 표시할 헤더들
+
+      // 페이지 로딩 시 초기화
+      document.addEventListener("DOMContentLoaded", function () {
+        loadDefaultCostCodes();
+        loadIFCObjects();
+        loadSummaryTable();
+        setupEventHandlers();
+      });
+
+      // 기본 코드리스트 로드
+      function loadDefaultCostCodes() {
+        fetch("{% static 'references/CodeList.csv' %}")
+          .then((res) => {
+            if (!res.ok) {
+              console.log("기본 CodeList.csv 파일을 찾을 수 없습니다.");
+              return;
+            }
+            return res.text();
+          })
+          .then((text) => {
+            if (text) {
+              parseCostCodesFromCSV(text);
+              // 서버에 자동 업로드
+              uploadParsedCodesToServer();
+              console.log(
+                "기본 코드리스트 로드 완료:",
+                Object.keys(codeData).length + "건"
+              );
+            }
+          })
+          .catch((err) => console.error("기본 코드리스트 로드 실패:", err));
+      }
+
+      // 파싱된 코드를 서버에 업로드
+      function uploadParsedCodesToServer() {
+        if (Object.keys(codeData).length === 0) return;
+
+        console.log(
+          "📤 서버에 공사코드 업로드 시도 중...",
+          Object.keys(codeData).length + "건"
+        );
+
+        // CSV 형태로 변환
+        const csvLines = [
+          "코드,공종,명칭,규격,단위,산식,재료비단가,노무비단가,경비단가,합계단가",
+        ];
+        Object.entries(codeData).forEach(([code, data]) => {
+          const line = [
+            code,
+            data["공종"] || "",
+            data["명칭"] || "",
+            data["규격"] || "",
+            data["단위"] || "",
+            data["산식"] || "",
+            data["재료비단가"] || "0",
+            data["노무비단가"] || "0",
+            data["경비단가"] || "0",
+            data["합계단가"] || "0",
+          ].join(",");
+          csvLines.push(line);
+        });
+
+        const csvContent = csvLines.join("\n");
+        const blob = new Blob([csvContent], {
+          type: "text/csv;charset=utf-8;",
+        });
+
+        const formData = new FormData();
+        formData.append("csv_file", blob, "CodeList.csv");
+
+        fetch("/api/load_cost_codes/", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              console.log("✅ 서버에 공사코드 업로드 완료:", data.message);
+              console.log("📊 전체 공사코드 수:", data.total_codes + "개");
+            } else {
+              console.warn("⚠️ 공사코드 업로드 중 문제:", data.error);
+            }
+          })
+          .catch((error) => {
+            console.error("❌ 서버 업로드 실패:", error);
+          });
+      }
+
+      // CSV 텍스트를 파싱하여 codeData 객체 생성
+      function parseCostCodesFromCSV(csvText) {
+        const lines = csvText.split(/\r?\n/).filter((x) => x.trim());
+        if (lines.length < 2) return;
+
+        const cols = lines[0].split(",").map((x) => x.trim());
+        codeData = {};
+
+        for (let i = 1; i < lines.length; i++) {
+          const row = lines[i].split(",").map((x) => x.trim());
+          const code = row[cols.indexOf("코드")];
+          if (!code) continue;
+
+          codeData[code] = {};
+          cols.forEach((col, j) => {
+            codeData[code][col] = row[j] || "";
+          });
+        }
+      }
+
+      // IFC 객체 데이터 로드
+      function loadIFCObjects() {
+        fetch(`/api/ifc_objects/${PROJECT_ID}/`)
+          .then((response) => response.json())
+          .then((data) => {
+            objectData = data.objects;
+            headers = data.headers;
+            updateGroupComboBoxes();
+            updateColumnSelector(); // 컬럼 선택 UI 업데이트
+            updateGroupedTable();
+          })
+          .catch((error) => console.error("IFC 객체 로드 실패:", error));
+      }
+
+      // 요약 테이블 로드
+      function loadSummaryTable() {
+        fetch(`/api/summary_table/${PROJECT_ID}/`)
+          .then((response) => response.json())
+          .then((data) => {
+            updateSummaryTableDisplay(data.summary_data);
+            document.getElementById("summaryTotalLabel").textContent =
+              "요약 총 금액: " + data.total_sum.toLocaleString("ko-KR") + " 원";
+          })
+          .catch((error) => console.error("요약 테이블 로드 실패:", error));
+      }
+
+      // 이벤트 핸들러 설정
+      function setupEventHandlers() {
+        // 검색 기능
+        document
+          .getElementById("searchBox")
+          .addEventListener("input", searchCostCodes);
+
+        // 버튼 이벤트
+        document
+          .getElementById("addCodeBtn")
+          .addEventListener("click", addCostCodeToObjects);
+        document
+          .getElementById("removeCodeBtn")
+          .addEventListener("click", removeCostCodeFromObjects);
+        document.getElementById("loadCodeBtn").addEventListener("click", () => {
+          document.getElementById("codeFileInput").click();
+        });
+
+        // 파일 업로드
+        document
+          .getElementById("codeFileInput")
+          .addEventListener("change", handleCostCodeFileUpload);
+
+        // 그룹 콤보박스
+        for (let i = 1; i <= 3; i++) {
+          document
+            .getElementById("groupBy" + i)
+            .addEventListener("change", updateGroupedTable);
+        }
+
+        // 컬럼 선택 버튼들
+        document
+          .getElementById("selectAllColumnsBtn")
+          .addEventListener("click", () => selectAllColumns(true));
+        document
+          .getElementById("deselectAllColumnsBtn")
+          .addEventListener("click", () => selectAllColumns(false));
+      }
+
+      // 공사코드 검색
+      function searchCostCodes() {
+        const query = document
+          .getElementById("searchBox")
+          .value.trim()
+          .toLowerCase();
+        const resultsContainer = document.getElementById("searchResults");
+        resultsContainer.innerHTML = "";
+
+        if (!query || Object.keys(codeData).length === 0) return;
+
+        Object.entries(codeData).forEach(([code, data]) => {
+          if (
+            code.toLowerCase().includes(query) ||
+            (data["명칭"] || "").toLowerCase().includes(query)
+          ) {
+            const li = document.createElement("li");
+            li.textContent = `${code} - ${data["명칭"]} (${data["규격"]}, ${data["단위"]})`;
+            li.onclick = () => selectCostCode(code, li);
+            resultsContainer.appendChild(li);
+          }
+        });
+      }
+
+      // 공사코드 선택
+      function selectCostCode(code, element) {
+        document
+          .querySelectorAll("#searchResults li")
+          .forEach((li) => li.classList.remove("selected"));
+        element.classList.add("selected");
+        selectedCode = code;
+      }
+
+      // 그룹 콤보박스 업데이트
+      function updateGroupComboBoxes() {
+        for (let i = 1; i <= 3; i++) {
+          const combo = document.getElementById("groupBy" + i);
+          const currentValue = combo.value;
+          combo.innerHTML = "<option>없음</option>";
+
+          // 헤더들을 오름차순으로 정렬
+          const sortedHeaders = [...headers].sort((a, b) => a.localeCompare(b));
+
+          sortedHeaders.forEach((header) => {
+            const option = document.createElement("option");
+            option.value = header;
+            option.textContent = header;
+            combo.appendChild(option);
+          });
+
+          if (currentValue && headers.includes(currentValue)) {
+            combo.value = currentValue;
+          }
+        }
+      }
+
+      // 컬럼 선택 체크박스 업데이트
+      function updateColumnSelector() {
+        const container = document.getElementById("columnCheckboxes");
+        container.innerHTML = "";
+
+        // 기본적으로 처음 6개 컬럼만 선택
+        const defaultVisibleColumns = [
+          "GlobalId",
+          "Name",
+          "IfcClass",
+          "CostItems",
+          "총금액",
+          "SpatialContainer",
+        ];
+
+        if (visibleHeaders.length === 0) {
+          visibleHeaders = headers.filter((h) =>
+            defaultVisibleColumns.includes(h)
+          );
+        }
+
+        headers.forEach((header) => {
+          const div = document.createElement("div");
+          div.className = "column-checkbox";
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.id = `col_${header}`;
+          checkbox.value = header;
+          checkbox.checked = visibleHeaders.includes(header);
+          checkbox.addEventListener("change", handleColumnToggle);
+
+          const label = document.createElement("label");
+          label.htmlFor = `col_${header}`;
+          label.textContent = header;
+
+          div.appendChild(checkbox);
+          div.appendChild(label);
+          container.appendChild(div);
+        });
+      }
+
+      // 컬럼 토글 처리
+      function handleColumnToggle() {
+        const checkedBoxes = document.querySelectorAll(
+          '#columnCheckboxes input[type="checkbox"]:checked'
+        );
+        visibleHeaders = Array.from(checkedBoxes).map((cb) => cb.value);
+        updateGroupedTable();
+      }
+
+      // 모든 컬럼 선택/해제
+      function selectAllColumns(select) {
+        const checkboxes = document.querySelectorAll(
+          '#columnCheckboxes input[type="checkbox"]'
+        );
+        checkboxes.forEach((cb) => (cb.checked = select));
+        handleColumnToggle();
+      }
+
+      // 그룹화된 테이블 업데이트
+      function updateGroupedTable() {
+        const container = document.getElementById("ifcTablecontainer_");
+        container.innerHTML = "";
+
+        // 그룹 기준 수집
+        const groupKeys = [];
+        for (let i = 1; i <= 3; i++) {
+          const value = document.getElementById("groupBy" + i).value;
+          if (value !== "없음") groupKeys.push(value);
+        }
+
+        // 테이블 생성
+        const table = document.createElement("table");
+        table.className = "ifc-objects-table";
+
+        // 헤더
+        const thead = document.createElement("thead");
+        const headerRow = document.createElement("tr");
+
+        // 체크박스 헤더
+        const checkboxHeader = document.createElement("th");
+        checkboxHeader.innerHTML =
+          '<input type="checkbox" id="selectAllCheckbox">';
+        headerRow.appendChild(checkboxHeader);
+
+        // 보이는 헤더들만 표시
+        visibleHeaders.forEach((header) => {
+          const th = document.createElement("th");
+          th.textContent = header.split(".").pop(); // 마지막 부분만 표시
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+
+        if (groupKeys.length === 0) {
+          // 그룹화 없음 - 직접 표시
+          objectData.forEach((obj, index) => {
+            const row = createObjectRow(obj, index);
+            tbody.appendChild(row);
+          });
+        } else {
+          // 그룹화 적용
+          const groupedData = groupObjectsByKeys(objectData, groupKeys);
+          renderGroupedData(tbody, groupedData, 0, groupKeys);
+        }
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+
+        // 전체 선택 체크박스 이벤트
+        document
+          .getElementById("selectAllCheckbox")
+          .addEventListener("change", toggleSelectAll);
+      }
+
+      // 객체 행 생성
+      function createObjectRow(obj, index) {
+        const row = document.createElement("tr");
+        row.dataset.globalId = obj.GlobalId;
+        row.className = "object-row";
+
+        // 체크박스
+        const checkboxCell = document.createElement("td");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = obj.GlobalId;
+        checkbox.className = "object-checkbox";
+        checkbox.addEventListener("change", handleObjectSelection);
+        checkboxCell.appendChild(checkbox);
+        row.appendChild(checkboxCell);
+
+        // 행 클릭 이벤트 (체크박스 토글)
+        row.addEventListener("click", function (e) {
+          if (e.target !== checkbox) {
+            checkbox.checked = !checkbox.checked;
+            handleObjectSelection();
+          }
+        });
+
+        // 보이는 헤더들만 데이터 셀 생성
+        visibleHeaders.forEach((header) => {
+          const cell = document.createElement("td");
+          let value = obj[header];
+
+          if (value === undefined && obj.Quantities && obj.Quantities[header]) {
+            value = obj.Quantities[header];
+          }
+          if (value === undefined && obj.Properties && obj.Properties[header]) {
+            value = obj.Properties[header];
+          }
+
+          if (typeof value === "number") {
+            if (value % 1 === 0) {
+              value = value.toLocaleString("ko-KR");
+            } else {
+              value = value.toLocaleString("ko-KR", {
+                maximumFractionDigits: 3,
+              });
+            }
+          }
+
+          cell.textContent = value || "";
+          cell.title = value || ""; // 툴팁
+          row.appendChild(cell);
+        });
+
+        return row;
+      }
+
+      // 객체들을 키로 그룹화
+      function groupObjectsByKeys(objects, keys, depth = 0) {
+        if (depth >= keys.length) return objects;
+
+        const grouped = {};
+        const key = keys[depth];
+
+        objects.forEach((obj) => {
+          let value = obj[key];
+          if (value === undefined && obj.Quantities)
+            value = obj.Quantities[key];
+          if (value === undefined && obj.Properties)
+            value = obj.Properties[key];
+          if (value === undefined) value = "N/A";
+
+          if (!grouped[value]) grouped[value] = [];
+          grouped[value].push(obj);
+        });
+
+        Object.keys(grouped).forEach((key) => {
+          grouped[key] = groupObjectsByKeys(grouped[key], keys, depth + 1);
+        });
+
+        return grouped;
+      }
+
+      // 그룹화된 데이터 렌더링
+      function renderGroupedData(tbody, groupedData, depth, groupKeys) {
+        Object.entries(groupedData).forEach(([groupValue, content]) => {
+          const groupKey = `${groupKeys[depth]}:${groupValue}`;
+          const isCollapsed = collapsedGroups.has(groupKey);
+          const symbol = isCollapsed ? "▶" : "▼";
+
+          // 그룹 헤더 행
+          const groupRow = document.createElement("tr");
+          groupRow.className = "group-header";
+          groupRow.style.backgroundColor = "#f0f0f0";
+          groupRow.style.fontWeight = "bold";
+          groupRow.style.cursor = "pointer";
+
+          const groupCell = document.createElement("td");
+          groupCell.colSpan = visibleHeaders.length + 1; // 체크박스 포함
+          groupCell.textContent = `${" ".repeat(depth * 2)}${symbol} ${
+            groupKeys[depth]
+          }: ${groupValue}`;
+          groupRow.appendChild(groupCell);
+
+          groupRow.addEventListener("click", () => toggleGroup(groupKey));
+          tbody.appendChild(groupRow);
+
+          if (!isCollapsed) {
+            if (Array.isArray(content)) {
+              content.forEach((obj, index) => {
+                const row = createObjectRow(obj, index);
+                tbody.appendChild(row);
+              });
+            } else {
+              renderGroupedData(tbody, content, depth + 1, groupKeys);
+            }
+          }
+        });
+      }
+
+      // 그룹 토글
+      function toggleGroup(groupKey) {
+        if (collapsedGroups.has(groupKey)) {
+          collapsedGroups.delete(groupKey);
+        } else {
+          collapsedGroups.add(groupKey);
+        }
+        updateGroupedTable();
+      }
+
+      // 객체 선택 처리
+      function handleObjectSelection() {
+        const selectedCheckboxes = document.querySelectorAll(
+          "input.object-checkbox:checked"
+        );
+        selectedObjectIds = Array.from(selectedCheckboxes).map(
+          (cb) => cb.value
+        );
+
+        // 선택된 행 스타일 업데이트
+        document.querySelectorAll(".object-row").forEach((row) => {
+          const checkbox = row.querySelector("input.object-checkbox");
+          if (checkbox && checkbox.checked) {
+            row.classList.add("selected");
+          } else {
+            row.classList.remove("selected");
+          }
+        });
+
+        // 전체 선택 체크박스 상태 업데이트
+        const allCheckboxes = document.querySelectorAll(
+          "input.object-checkbox"
+        );
+        const allSelected =
+          allCheckboxes.length > 0 &&
+          selectedCheckboxes.length === allCheckboxes.length;
+        const someSelected = selectedCheckboxes.length > 0;
+
+        const selectAllCheckbox = document.getElementById("selectAllCheckbox");
+        if (selectAllCheckbox) {
+          selectAllCheckbox.checked = allSelected;
+          selectAllCheckbox.indeterminate = someSelected && !allSelected;
+        }
+
+        if (selectedObjectIds.length > 0) {
+          loadObjectDetails();
+        } else {
+          clearObjectDetails();
+        }
+      }
+
+      // 전체 선택 토글
+      function toggleSelectAll() {
+        const selectAll = document.getElementById("selectAllCheckbox").checked;
+        const checkboxes = document.querySelectorAll("input.object-checkbox");
+
+        checkboxes.forEach((checkbox) => {
+          checkbox.checked = selectAll;
+        });
+
+        handleObjectSelection();
+      }
+
+      // 선택된 객체들의 상세 정보 로드
+      function loadObjectDetails() {
+        const formData = new FormData();
+        selectedObjectIds.forEach((id) => formData.append("object_ids[]", id));
+
+        fetch("/api/object_details/", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            updateDetailTable(data.details);
+            document.getElementById("totalLabel").textContent =
+              "총 금액: " + data.total_amount.toLocaleString("ko-KR") + " 원";
+          })
+          .catch((error) => console.error("객체 상세 정보 로드 실패:", error));
+      }
+
+      // 상세 테이블 업데이트
+      function updateDetailTable(details) {
+        const tbody = document.querySelector("#codeDetailTable tbody");
+        tbody.innerHTML = "";
+
+        details.forEach((detail) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${detail.code}</td>
+            <td>${detail.name}</td>
+            <td>${detail.specification}</td>
+            <td>${detail.unit}</td>
+            <td>${detail.formula}</td>
+            <td>${detail.quantity.toLocaleString("ko-KR", {
+              maximumFractionDigits: 2,
+            })}</td>
+            <td>${detail.unit_price.toLocaleString("ko-KR")}</td>
+            <td>${detail.amount.toLocaleString("ko-KR")}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      }
+
+      // 상세 정보 클리어
+      function clearObjectDetails() {
+        document.querySelector("#codeDetailTable tbody").innerHTML = "";
+        document.getElementById("totalLabel").textContent = "총 금액: 0 원";
+      }
+
+      // 공사코드 추가
+      function addCostCodeToObjects() {
+        if (!selectedCode || selectedObjectIds.length === 0) {
+          alert("공사코드와 객체를 선택해주세요.");
+          return;
+        }
+
+        const formData = new FormData();
+        selectedObjectIds.forEach((id) => formData.append("object_ids[]", id));
+        formData.append("cost_code", selectedCode);
+
+        fetch("/api/add_cost_code/", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              alert(data.message);
+              loadIFCObjects();
+              loadSummaryTable();
+              loadObjectDetails();
+            } else {
+              alert("오류: " + data.error);
+            }
+          })
+          .catch((error) => {
+            console.error("공사코드 추가 실패:", error);
+            alert("공사코드 추가 중 오류가 발생했습니다.");
+          });
+      }
+
+      // 공사코드 제거
+      function removeCostCodeFromObjects() {
+        if (selectedObjectIds.length === 0) {
+          alert("객체를 선택해주세요.");
+          return;
+        }
+
+        // 상세 테이블에서 선택된 코드 찾기
+        const selectedDetailRow = document.querySelector(
+          "#codeDetailTable tbody tr.selected"
+        );
+        if (!selectedDetailRow) {
+          alert("제거할 공사코드를 상세 테이블에서 선택해주세요.");
+          return;
+        }
+
+        const codeToRemove = selectedDetailRow.children[0].textContent;
+
+        const formData = new FormData();
+        selectedObjectIds.forEach((id) => formData.append("object_ids[]", id));
+        formData.append("cost_code", codeToRemove);
+
+        fetch("/api/remove_cost_code/", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              alert(data.message);
+              loadIFCObjects();
+              loadSummaryTable();
+              loadObjectDetails();
+            } else {
+              alert("오류: " + data.error);
+            }
+          })
+          .catch((error) => {
+            console.error("공사코드 제거 실패:", error);
+            alert("공사코드 제거 중 오류가 발생했습니다.");
+          });
+      }
+
+      // 상세 테이블 행 선택 (delegation)
+      document.addEventListener("click", function (e) {
+        if (e.target.closest("#codeDetailTable tbody tr")) {
+          document
+            .querySelectorAll("#codeDetailTable tbody tr")
+            .forEach((row) => row.classList.remove("selected"));
+          e.target.closest("tr").classList.add("selected");
+        }
+      });
+
+      // 코드 파일 업로드 처리
+      function handleCostCodeFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("csv_file", file);
+
+        fetch("/api/load_cost_codes/", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              alert(data.message);
+              // 서버에서 관리하므로 codeData 재로딩 생략
+            } else {
+              alert("오류: " + data.error);
+            }
+          })
+          .catch((error) => {
+            console.error("코드 파일 업로드 실패:", error);
+            alert("파일 업로드 중 오류가 발생했습니다.");
+          });
+      }
+
+      // 요약 테이블 표시 업데이트
+      function updateSummaryTableDisplay(summaryData) {
+        const tbody = document.querySelector("#summaryTable tbody");
+        tbody.innerHTML = "";
+
+        summaryData.forEach((item) => {
+          const row = document.createElement("tr");
+
+          if (item.type === "group") {
+            row.className = "group-header";
+            row.style.backgroundColor = "#f0f0f0";
+            row.style.fontWeight = "bold";
+
+            const cell = document.createElement("td");
+            cell.colSpan = 9;
+            cell.textContent = `▼ 공종: ${
+              item.group
+            } (총금액: ${item.total.toLocaleString("ko-KR")} 원)`;
+            row.appendChild(cell);
+          } else {
+            // 개별 항목
+            row.innerHTML = `
+              <td>${item.code}</td>
+              <td>${item.category}</td>
+              <td>${item.name}</td>
+              <td>${item.specification}</td>
+              <td>${item.unit}</td>
+              <td>${item.quantity.toLocaleString("ko-KR", {
+                maximumFractionDigits: 2,
+              })}</td>
+              <td>${item.material_amount.toLocaleString("ko-KR")}</td>
+              <td>${item.labor_amount.toLocaleString("ko-KR")}</td>
+              <td>${item.total_amount.toLocaleString("ko-KR")}</td>
+            `;
+          }
+
+          tbody.appendChild(row);
+        });
+      }
+
+      // IFC 저장 (다운로드)
+      document
+        .getElementById("saveIFCBtn")
+        .addEventListener("click", function () {
+          if (confirm("수정된 IFC 파일을 다운로드하시겠습니까?")) {
+            window.location.href = `/api/download_ifc/${PROJECT_ID}/`;
+          }
+        });
+    </script>
+
+    <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+
+      const viewDiv = document.getElementById("viewer");
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        60,
+        viewDiv.clientWidth / viewDiv.clientHeight,
+        0.1,
+        10000
+      );
+      const renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+      });
+      renderer.setSize(viewDiv.clientWidth, viewDiv.clientHeight);
+      viewDiv.appendChild(renderer.domElement);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(10, 10, 10);
+      scene.add(dir);
+
+      camera.position.set(10, 10, 10);
+      THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1); // IFC는 Z‑Up
+
+      // Pyodide / IfcOpenShell 로 IFC 로드
+      const IFC_URL = "{{ project.ifc_file.url }}";
+      const WHEEL_URL =
+        "{% static 'wasm/IfcOpenShell-0.7.0-py3-none-any.whl' %}";
+
+      (async () => {
+        const pyodide = await loadPyodide();
+        await pyodide.loadPackage("micropip");
+        const micropip = pyodide.pyimport("micropip");
+        await micropip.install(WHEEL_URL);
+
+        // IFC 텍스트 로드
+        const ifcText = await (await fetch(IFC_URL)).text();
+
+        // Python: IFC 열기 + geometry iterator
+        const ifcopenshell = pyodide.pyimport("ifcopenshell");
+        const ifc = ifcopenshell.file.from_string(ifcText);
+        const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
+        const s = ifcopenshell_geom.settings();
+        s.set(s.WELD_VERTICES, false);
+
+        const it = ifcopenshell_geom.iterator(s, ifc);
+        let lastMeshId = null;
+        let geometries = [];
+
+        if (it.initialize()) {
+          while (true) {
+            const obj = it.get();
+            const ty = ifc.by_id(obj.id).is_a();
+            if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
+              if (lastMeshId !== obj.geometry.id) {
+                geometries = [];
+
+                const materials = obj.geometry.materials.toJs().map(
+                  (e) =>
+                    new THREE.MeshLambertMaterial({
+                      color: new THREE.Color(...e.diffuse.toJs()),
+                      opacity: 1.0 - e.transparency,
+                      transparent: e.transparency > 1e-5,
+                      side: THREE.DoubleSide,
+                    })
+                );
+
+                const mapping = {};
+                obj.geometry.material_ids.toJs().forEach((mid, idx) => {
+                  mapping[mid] = mapping[mid] || [];
+                  mapping[mid].push(idx);
+                });
+
+                const vs = new Float32Array(obj.geometry.verts.toJs());
+                const ns = new Float32Array(obj.geometry.normals.toJs());
+                const fs = obj.geometry.faces.toJs();
+
+                let offset = 0;
+                if (mapping[-1]) {
+                  materials.unshift(
+                    new THREE.MeshLambertMaterial({
+                      color: new THREE.Color(0.6, 0.6, 0.6),
+                      side: THREE.DoubleSide,
+                    })
+                  );
+                  offset = 1;
+                }
+
+                materials.forEach((mat, mi) => {
+                  const idxList = mapping[mi - offset];
+                  if (!idxList) return; // 방어
+                  const g = new THREE.BufferGeometry();
+                  const flatIdx = [];
+                  idxList.forEach((i) => {
+                    flatIdx.push(fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]);
+                  });
+                  g.setIndex(flatIdx);
+                  g.setAttribute("position", new THREE.BufferAttribute(vs, 3));
+                  g.setAttribute("normal", new THREE.BufferAttribute(ns, 3));
+                  geometries.push([g, mat]);
+                });
+
+                lastMeshId = obj.geometry.id;
+              }
+
+              // Mesh 인스턴스 생성
+              geometries.forEach(([g, mat]) => {
+                const mesh = new THREE.Mesh(g, mat);
+                const m = obj.transformation.matrix.data.toJs();
+                // obj.transformation 는 열(Col-major) → Three(행) 맞추기 transpose
+                const mat4 = new THREE.Matrix4()
+                  .set(
+                    m[0],
+                    m[1],
+                    m[2],
+                    0,
+                    m[3],
+                    m[4],
+                    m[5],
+                    0,
+                    m[6],
+                    m[7],
+                    m[8],
+                    0,
+                    m[9],
+                    m[10],
+                    m[11],
+                    1
+                  )
+                  .transpose();
+                mesh.matrixAutoUpdate = false;
+                mesh.matrix = mat4;
+                scene.add(mesh);
+              });
+            }
+            if (!it.next()) break;
+          }
+        }
+
+        zoomToFit();
+        animate();
+      })();
+
+      function zoomToFit() {
+        const box = new THREE.Box3().setFromObject(scene);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3()).length();
+        const dist = size * 1.5;
+        camera.position.copy(
+          center.clone().add(new THREE.Vector3(dist, dist, dist))
+        );
+        camera.lookAt(center);
+        controls.target.copy(center);
+        controls.update();
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener("resize", () => {
+        const w = viewDiv.clientWidth;
+        const h = viewDiv.clientHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      });
+    </script>
+
+    <!-- ─────────────────────────────  페이지 전용 스타일 (테이블 축소 등)  ───────────────────────────── -->
+    <style>
+      .ifc-objects-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0;
+        font-size: 11px;
+      }
+      .ifc-objects-table th,
+      .ifc-objects-table td {
+        border: 1px solid #ddd;
+        padding: 3px 6px;
+        text-align: left;
+        height: 24px;
+        vertical-align: middle;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .ifc-objects-table th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+        height: 28px;
+        font-size: 10px;
+      }
+      .ifc-objects-table tbody tr {
+        height: 24px;
+      }
+      .ifc-objects-table tr:nth-child(even) {
+        background-color: #f9f9f9;
+      }
+      .ifc-objects-table tbody tr:hover {
+        background-color: #e8f4fd;
+        cursor: pointer;
+      }
+      .ifc-objects-table tbody tr.selected {
+        background-color: #007bff !important;
+        color: white;
+      }
+
+      .group-header {
+        background-color: #e0e0e0 !important;
+        font-weight: bold;
+        cursor: pointer;
+        height: 28px !important;
+        font-size: 11px;
+      }
+      .group-header:hover {
+        background-color: #d0d0d0 !important;
+      }
+      .group-header td {
+        height: 28px !important;
+        line-height: 28px !important;
+      }
+
+      .search-results {
+        max-height: 180px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        margin: 8px 0;
+        padding: 0;
+        list-style: none;
+        font-size: 11px;
+      }
+      .search-results li {
+        padding: 6px;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .search-results li:hover {
+        background-color: #f0f0f0;
+      }
+      .search-results li.selected {
+        background-color: #007bff;
+        color: white;
+      }
+
+      .code-detail-table {
+        font-size: 11px;
+      }
+      .code-detail-table th,
+      .code-detail-table td {
+        padding: 3px 6px;
+        font-size: 11px;
+      }
+      .code-detail-table tbody tr.selected {
+        background-color: #007bff;
+        color: white;
+      }
+
+      .summary-table {
+        font-size: 11px;
+      }
+      .summary-table th,
+      .summary-table td {
+        padding: 3px 6px;
+        font-size: 11px;
+      }
+
+      .column-selector {
+        margin-top: 15px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: #f9f9f9;
+      }
+      .column-selector h4 {
+        font-size: 12px;
+        margin: 0 0 8px 0;
+        color: #333;
+      }
+      .column-checkboxes {
+        max-height: 200px;
+        overflow-y: auto;
+        margin-bottom: 8px;
+      }
+      .column-checkbox {
+        display: flex;
+        align-items: center;
+        margin-bottom: 3px;
+        font-size: 10px;
+      }
+      .column-checkbox input[type="checkbox"] {
+        margin-right: 6px;
+        transform: scale(0.8);
+      }
+      .column-checkbox label {
+        cursor: pointer;
+        flex: 1;
+        font-size: 10px;
+      }
+      .column-buttons {
+        display: flex;
+        gap: 5px;
+      }
+      .btn-small {
+        padding: 3px 8px;
+        font-size: 10px;
+        background-color: #6c757d;
+        color: white;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .btn-small:hover {
+        background-color: #5a6268;
+      }
+
+      input[type="text"],
+      select {
+        font-size: 11px;
+        padding: 4px 6px;
+      }
+      .group-bar {
+        margin-bottom: 10px;
+        font-size: 11px;
+      }
+      .group-bar label {
+        margin-right: 10px;
+        font-size: 11px;
+      }
+      .group-bar select {
+        margin-right: 15px;
+        font-size: 10px;
+        padding: 2px 4px;
+      }
+
+      .hidden {
+        display: none;
+      }
+      .left-panel {
+        width: 30%;
+        padding-right: 15px;
+      }
+      .right-panel {
+        width: 70%;
+      }
+      .container_detail {
+        display: flex;
+        margin: 15px 0;
+      }
+      .btn {
+        margin: 4px;
+        padding: 6px 12px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+      }
+      .btn:hover {
+        background-color: #0056b3;
+      }
+      .btn-block {
+        width: 100%;
+        padding: 10px;
+        background-color: #28a745;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .btn-block:hover {
+        background-color: #218838;
+      }
+    </style>
+  </body>
+</html>

@@ -1,0 +1,632 @@
+{% load static %}
+<!DOCTYPE html>
+<!--
+	Arcana by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+  <head>
+    <title>AIBIM-CostEstimator</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    />
+    <link rel="stylesheet" href="{% static 'css/style_ai_learning.css'%}" />
+
+    <link rel="stylesheet" href="{% static 'css/main.css'%}" />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+  </head>
+  <body class="is-preload">
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <!-- Logo -->
+        <h1>
+          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li><a href="">홈</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li class="current">
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </div>
+    <!-- Tab 3: 인공지능 학습 -->
+    <div class="container">
+      <!-- ...생략... -->
+      <div
+        id="statusMessage"
+        style="display: none; text-align: center; margin: 20px 0"
+      >
+        <!-- JS에서 상태 메시지가 들어감 -->
+      </div>
+      <!-- ...기존 내용 유지... -->
+
+      <div>
+        <div id="fileSelectors" style="display: block">
+          <div id="nav_sub">
+            <h6 class="text-center">
+              <b>데이터 선택</b>
+            </h6>
+          </div>
+          <input
+            type="file"
+            id="csvFileInput"
+            accept=".csv"
+            class="form-control mb-2"
+          />
+        </div>
+        <div id="columnSelectors" style="display: none">
+          <div id="nav_sub">
+            <h6 class="text-center">
+              <b>학습데이터 업로드(.csv)</b>
+            </h6>
+          </div>
+          <div>
+            <label class="form-label">입력 칼럼:</label>
+            <div id="inputColumnsContainer"></div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              onclick="addInputColumn()"
+            >
+              + 입력 칼럼 추가
+            </button>
+          </div>
+          <div class="mt-2">
+            <label class="form-label">결과 칼럼:</label>
+            <div id="outputColumnsContainer"></div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-primary"
+              onclick="addOutputColumn()"
+            >
+              + 결과 칼럼 추가
+            </button>
+          </div>
+          <div display="flex" justify-content="center">
+            <button
+              style="margin-top: 10px"
+              width="500px"
+              class="btn btn-primary btn-lg btn-block"
+              id="prepareTrainButton"
+              type="button"
+              class="btn btn-primary mt-2"
+              onclick="prepareTraining()"
+            >
+              학습 준비
+            </button>
+          </div>
+        </div>
+        <div id="settings" style="display: none">
+          <div id="nav_sub">
+            <h6 class="text-center">
+              <b>학습모델튜닝</b>
+            </h6>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label for="epochs">Epochs:</label>
+              <input
+                type="number"
+                id="epochs"
+                value="2000"
+                min="1"
+                class="form-control form-control-sm"
+              />
+            </div>
+            <div class="col-6">
+              <label for="batchSize">Batch Size:</label>
+              <input
+                type="number"
+                id="batchSize"
+                value="32"
+                min="1"
+                class="form-control form-control-sm"
+              />
+            </div>
+            <div class="col-6 mt-2">
+              <label for="learningRate">Learning Rate:</label>
+              <input
+                type="number"
+                id="learningRate"
+                value="0.01"
+                step="0.0001"
+                min="0.0001"
+                class="form-control form-control-sm"
+              />
+            </div>
+            <div class="col-6 mt-2">
+              <label for="valSplit">Validation Split:</label>
+              <input
+                type="number"
+                id="valSplit"
+                value="0.2"
+                step="0.1"
+                min="0"
+                max="0.5"
+                class="form-control form-control-sm"
+              />
+            </div>
+            <div class="col-6 mt-2">
+              <label for="optimizerSelect">Optimizer:</label>
+              <select id="optimizerSelect" class="form-select form-select-sm">
+                <option value="adam" selected>adam</option>
+                <option value="sgd">sgd</option>
+                <option value="rmsprop">rmsprop</option>
+              </select>
+            </div>
+            <div class="col-6 mt-2">
+              <label for="hiddenLayers">Hidden Layers:</label>
+              <select id="hiddenLayers" class="form-select form-select-sm">
+                <option value="0">0</option>
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+              </select>
+            </div>
+            <div class="col-6 mt-2">
+              <label for="unitsLayer1">Units Layer 1:</label>
+              <input
+                type="number"
+                id="unitsLayer1"
+                value="64"
+                min="1"
+                class="form-control form-control-sm"
+              />
+            </div>
+            <div class="col-6 mt-2">
+              <label for="unitsLayer2">Units Layer 2:</label>
+              <input
+                type="number"
+                id="unitsLayer2"
+                value="32"
+                min="1"
+                class="form-control form-control-sm"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onclick="trainAndPredict()"
+            id="trainButton"
+            class="btn btn-success mt-2"
+          >
+            학습 시작
+          </button>
+        </div>
+        <div id="trainingResult" style="display: none">
+          <div id="nav_sub">
+            <h6 class="text-center">
+              <b>학습모델 개요 및 결과</b>
+            </h6>
+          </div>
+          <div id="trainingSummary" class="mb-3"></div>
+          <div id="trainingLog"></div>
+          <div class="col-section" style="flex: 2">
+            <div class="charts-flex" id="charts"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+    <script>
+      // ---------- Tab 3: AI 학습 ----------
+      let headersList = [],
+        lossChart,
+        predictionChart;
+      document.getElementById("csvFileInput").onchange = function (event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        Papa.parse(file, {
+          preview: 1,
+          header: true,
+          complete: function (results) {
+            headersList = results.meta.fields;
+            document.getElementById("inputColumnsContainer").innerHTML = "";
+            document.getElementById("outputColumnsContainer").innerHTML = "";
+            addInputColumn();
+            addOutputColumn();
+            document.getElementById("columnSelectors").style.display = "block";
+          },
+        });
+      };
+      function addInputColumn() {
+        addColumn("inputColumnsContainer", "input-column-select");
+      }
+      function addOutputColumn() {
+        addColumn("outputColumnsContainer", "output-column-select");
+      }
+      function addColumn(containerId, selectClass) {
+        const container = document.getElementById(containerId);
+        const row = document.createElement("div");
+        row.className = "d-flex align-items-center mb-1";
+        const select = document.createElement("select");
+        select.className = `form-select form-select-sm ${selectClass}`;
+        headersList.forEach((h) =>
+          select.appendChild(
+            Object.assign(document.createElement("option"), {
+              value: h,
+              text: h,
+            })
+          )
+        );
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn btn-sm btn-outline-danger ms-2";
+        btn.textContent = "–";
+        btn.onclick = () => container.removeChild(row);
+        row.appendChild(select);
+        row.appendChild(btn);
+        container.appendChild(row);
+      }
+      function prepareTraining() {
+        const file = document.getElementById("csvFileInput").files[0];
+        if (!file) return alert("CSV 파일을 선택해주세요.");
+        Papa.parse(file, {
+          header: true,
+          dynamicTyping: true,
+          complete: function (results) {
+            const raw = results.data.filter((r) => r && Object.keys(r).length);
+            const inputCols = Array.from(
+              document.querySelectorAll(".input-column-select")
+            ).map((s) => s.value);
+            const outputCols = Array.from(
+              document.querySelectorAll(".output-column-select")
+            ).map((s) => s.value);
+            window.inputData = raw.map((r) => inputCols.map((c) => r[c]));
+            window.outputData = raw.map((r) => outputCols.map((c) => r[c]));
+            if (window.inputData.length < 5)
+              return alert("데이터가 너무 적습니다.");
+            document.getElementById("settings").style.display = "block";
+            document.getElementById("trainingLog").innerText =
+              "데이터 준비 완료!";
+            document.getElementById("trainingLog").style.display = "block";
+          },
+        });
+      }
+
+      function showTrainingSummary(meta, preds, actuals) {
+        function rmse(a, b) {
+          const n = a.length;
+          let sum = 0;
+          for (let i = 0; i < n; ++i) sum += Math.pow(a[i] - b[i], 2);
+          return Math.sqrt(sum / n);
+        }
+        function mae(a, b) {
+          const n = a.length;
+          let sum = 0;
+          for (let i = 0; i < n; ++i) sum += Math.abs(a[i] - b[i]);
+          return sum / n;
+        }
+        function r2(yTrue, yPred) {
+          const mean = yTrue.reduce((a, b) => a + b, 0) / yTrue.length;
+          let ssTot = 0,
+            ssRes = 0;
+          for (let i = 0; i < yTrue.length; i++) {
+            ssTot += Math.pow(yTrue[i] - mean, 2);
+            ssRes += Math.pow(yTrue[i] - yPred[i], 2);
+          }
+          return 1 - ssRes / ssTot;
+        }
+
+        // 메트릭 계산
+        const rmseValue = rmse(actuals, preds);
+        const maeValue = mae(actuals, preds);
+        const r2Value = r2(actuals, preds);
+
+        // 메타데이터에 성능 메트릭 추가
+        meta.rmse = rmseValue;
+        meta.mae = maeValue;
+        meta.r2_score = r2Value;
+
+        const N = actuals.length;
+        const summaryDiv = document.getElementById("trainingSummary");
+        summaryDiv.innerHTML = `
+        <div class="card card-body bg-light">
+            <h6 class="mb-2"><b>학습 모델 개요</b></h6>
+            <ul class="mb-2">
+                <li><b>입력 칼럼:</b> ${meta.inputColumns.join(", ")}</li>
+                <li><b>결과 칼럼:</b> ${meta.outputColumns.join(", ")}</li>
+                <li><b>데이터 개수:</b> ${N} rows</li>
+                <li><b>Root Mean Squared Error (RMSE):</b> ${rmseValue.toFixed(
+                  4
+                )}</li>
+                <li><b>Mean Absolute Error (MAE):</b> ${maeValue.toFixed(
+                  4
+                )}</li>
+                <li><b>R² Score:</b> ${r2Value.toFixed(4)}</li>
+            </ul>
+        </div>
+    `;
+
+        // 전역 변수에 메타데이터 저장 (모델 저장 시 사용)
+        window.modelMetadata = meta;
+      }
+
+      async function trainAndPredict() {
+        // 준비중 메시지 노출 (3초)
+        showStatus("학습 준비중입니다. 잠시만 기다려주세요...");
+        await new Promise((res) => setTimeout(res, 3000));
+        hideStatus();
+
+        document.getElementById("fileSelectors").style.display = "none";
+        document.getElementById("columnSelectors").style.display = "none";
+        document.getElementById("settings").style.display = "none";
+        document.getElementById("trainingResult").style.display = "block";
+
+        const logEl = document.getElementById("trainingLog");
+        logEl.innerText = "학습 시작...\n";
+
+        // 실제 학습(기존과 동일)
+        const epochs = +document.getElementById("epochs").value;
+        const batchSize = +document.getElementById("batchSize").value;
+        const lr = +document.getElementById("learningRate").value;
+        const valSplit = +document.getElementById("valSplit").value;
+        const optimizerName = document.getElementById("optimizerSelect").value;
+        const hiddenCount = +document.getElementById("hiddenLayers").value;
+        const units1 = +document.getElementById("unitsLayer1").value;
+        const units2 = +document.getElementById("unitsLayer2").value;
+
+        const inputDim = window.inputData[0].length,
+          outputDim = window.outputData[0].length;
+        window.model = tf.sequential();
+        if (hiddenCount >= 1)
+          window.model.add(
+            tf.layers.dense({
+              units: units1,
+              inputShape: [inputDim],
+              activation: "relu",
+            })
+          );
+        if (hiddenCount >= 2)
+          window.model.add(
+            tf.layers.dense({ units: units2, activation: "relu" })
+          );
+        window.model.add(tf.layers.dense({ units: outputDim }));
+        const optimizer =
+          optimizerName === "sgd"
+            ? tf.train.sgd(lr)
+            : optimizerName === "rmsprop"
+            ? tf.train.rmsprop(lr)
+            : tf.train.adam(lr);
+        window.model.compile({ optimizer, loss: "meanSquaredError" });
+
+        const xTensor = tf.tensor2d(window.inputData),
+          yTensor = tf.tensor2d(window.outputData);
+        const lossHistory = [],
+          valLossHistory = [];
+        await window.model.fit(xTensor, yTensor, {
+          epochs,
+          batchSize,
+          validationSplit: valSplit,
+          callbacks: {
+            onEpochEnd: (epoch, logs) => {
+              logEl.innerText += `Epoch ${epoch + 1}: loss=${logs.loss.toFixed(
+                4
+              )}, val_loss=${logs.val_loss.toFixed(4)}\n`;
+              logEl.scrollTop = logEl.scrollHeight;
+              lossHistory.push(logs.loss);
+              valLossHistory.push(logs.val_loss);
+              updateLossChart(lossHistory, valLossHistory);
+            },
+          },
+        });
+
+        // 학습 끝나고, 결과 준비중 메시지 3초
+        showStatus("학습 결과를 준비중입니다...");
+        await new Promise((res) => setTimeout(res, 3000));
+        hideStatus();
+        document.getElementById("trainingResult").style.display = "block";
+        // 예측 및 결과 요약/그래프 표시
+        const preds = await window.model.predict(xTensor).array();
+        const inputs = window.inputData.map((d) => d[0]);
+        const actuals = window.outputData.map((d) => d[0]);
+        updatePredictionChart(
+          inputs,
+          actuals,
+          preds.map((d) => d[0])
+        );
+
+        const inputCols = Array.from(
+          document.querySelectorAll(".input-column-select")
+        ).map((s) => s.value);
+        const outputCols = Array.from(
+          document.querySelectorAll(".output-column-select")
+        ).map((s) => s.value);
+
+        const metaData = { inputColumns: inputCols, outputColumns: outputCols };
+
+        showTrainingSummary(
+          metaData,
+          preds.map((d) => d[0]),
+          actuals
+        );
+
+        // 향상된 메타데이터 (성능 메트릭 포함)
+        const enhancedMetadata = window.modelMetadata; // showTrainingSummary에서 설정됨
+        const metaBlob = new Blob([JSON.stringify(enhancedMetadata, null, 2)], {
+          type: "application/json",
+        });
+
+        await window.model.save(
+          tf.io.withSaveHandler(async (data) => {
+            const modelJson = JSON.stringify(data.modelTopology, null, 2);
+            const weights = new Blob([data.weightData], {
+              type: "application/octet-stream",
+            });
+            const zip = new JSZip();
+            zip.file("model.json", modelJson);
+            zip.file("weights.bin", weights);
+            zip.file("trained-model-metadata.json", metaBlob);
+            const content = await zip.generateAsync({ type: "blob" });
+            const url = URL.createObjectURL(content);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "trained-model-all.zip";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            return {};
+          })
+        );
+      }
+
+      function updateLossChart(lossHistory, valLossHistory) {
+        const ctx =
+          document.getElementById("charts").querySelector("#lossChart") ||
+          createCanvas("lossChart", "Loss & Val Loss");
+        if (!lossChart) {
+          lossChart = new Chart(ctx.getContext("2d"), {
+            type: "line",
+            data: {
+              labels: [...Array(lossHistory.length).keys()].map((i) => i + 1),
+              datasets: [
+                {
+                  label: "Loss",
+                  data: lossHistory,
+                  fill: false,
+                },
+                {
+                  label: "Val Loss",
+                  data: valLossHistory,
+                  fill: false,
+                },
+              ],
+            },
+          });
+        } else {
+          lossChart.data.labels = [...Array(lossHistory.length).keys()].map(
+            (i) => i + 1
+          );
+          lossChart.data.datasets[0].data = lossHistory;
+          lossChart.data.datasets[1].data = valLossHistory;
+          lossChart.update();
+        }
+      }
+      function updatePredictionChart(inputs, actuals, predictions) {
+        const ctx =
+          document.getElementById("charts").querySelector("#predChart") ||
+          createCanvas("predChart", "Actual vs Predicted");
+        if (predictionChart) predictionChart.destroy();
+        predictionChart = new Chart(ctx.getContext("2d"), {
+          type: "scatter",
+          data: {
+            datasets: [
+              {
+                label: "Actual",
+                data: inputs.map((x, i) => ({
+                  x,
+                  y: actuals[i],
+                })),
+              },
+              {
+                label: "Pred",
+                data: inputs.map((x, i) => ({
+                  x,
+                  y: predictions[i],
+                })),
+              },
+            ],
+          },
+        });
+      }
+      function createCanvas(id, title) {
+        const container = document.getElementById("charts");
+        container.style.display = "flex";
+        const div = document.createElement("div");
+        div.className = "chart-box";
+        const h3 = document.createElement("h5");
+        h3.innerText = title;
+        div.appendChild(h3);
+        const canvas = document.createElement("canvas");
+        canvas.id = id;
+        div.appendChild(canvas);
+        container.appendChild(div);
+        return canvas;
+      }
+      let statusInterval = null;
+
+      function showStatus(msg) {
+        const el = document.getElementById("statusMessage");
+        el.innerHTML = `
+    <div class="d-flex justify-content-center align-items-center">
+      <div class="spinner-border text-primary me-2" role="status" style="width:2rem;height:2rem;"></div>
+      <span id="statusText">${msg}</span>
+    </div>
+  `;
+        el.style.display = "block";
+        document.getElementById("fileSelectors").style.display = "none";
+        document.getElementById("columnSelectors").style.display = "none";
+        document.getElementById("settings").style.display = "none";
+        document.getElementById("trainingResult").style.display = "none";
+
+        // Dot animation for the message
+        let count = 0;
+        const textEl = document.getElementById("statusText");
+        statusInterval = setInterval(() => {
+          count = (count + 1) % 4;
+          textEl.innerText = msg + ".".repeat(count);
+        }, 400);
+      }
+
+      function hideStatus() {
+        document.getElementById("statusMessage").style.display = "none";
+        if (statusInterval) {
+          clearInterval(statusInterval);
+          statusInterval = null;
+        }
+      }
+
+      // ---------- 초기 진입 ----------
+      // showTab(0);
+    </script>
+  </body>
+</html>

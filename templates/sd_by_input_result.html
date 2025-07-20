@@ -1,0 +1,171 @@
+{% load static %}
+<!DOCTYPE html>
+<!--
+	Arcana by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+    <head>
+        <title>AIBIM-CostEstimator</title>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, user-scalable=no"
+        />
+        <!-- Bootstrap CSS -->
+
+        <link
+            rel="stylesheet"
+            href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+            integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+            crossorigin="anonymous"
+        />
+        <link rel="stylesheet" href="{% static 'css/main.css'%}" />
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    </head>
+    <body class="is-preload">
+        <div id="page-wrapper">
+            <!-- Header -->
+            <div id="header">
+                <h1>
+                    <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+                </h1>
+                <!-- Nav -->
+                <nav id="nav">
+                    <ul>
+                        <li><a href="/">홈</a></li>
+                        <li class="current">
+                            <a href="#">계획설계단계 견적</a>
+                            <ul>
+                                <li>
+                                    <a href="/sd_by_input/"
+                                        >AI 개산견적(개요정보기반)</a
+                                    >
+                                </li>
+                                <li>
+                                    <a href="#"
+                                        >AI 개산견적(사용자정의 AI모델 기반)</a
+                                    >
+                                </li>
+                            </ul>
+                        </li>
+                        <li>
+                            <a href="#">중간설계단계 견적</a>
+                            <ul>
+                                <li>
+                                    <a href="#">AI+BIM 개산견적(IFC기반)</a>
+                                </li>
+                            </ul>
+                        </li>
+                        <li>
+                            <a href="#">실시설계단계 견적</a>
+                            <ul>
+                                <li>
+                                    <a href="#">AI+BIM 상세견적(IFC기반)</a>
+                                </li>
+                            </ul>
+                        </li>
+                        <li>
+                            <a href="/ai_learning">AI모델 학습</a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+            <div id="nav_sub">
+                <h6 class="text-center">
+                    <b>AI개산견적</b>
+                    <span>- 개요정보기반</span>
+                </h6>
+            </div>
+            <!-- sd_by_ifc -->
+            <div class="container">
+                <h1>sss</h1>
+                <h3>프로젝트명 : {{inputData.project_name}}</h3>
+            </div>
+            <div class="container">
+                <h2>CSV 데이터 그래프</h2>
+                <div class="selector-box">
+                    <label
+                        >X축:
+                        <select id="x-col">
+                            {% for col in columns %}
+                            <option value="{{ col }}">{{ col }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label
+                        >Y축:
+                        <select id="y-col">
+                            {% for col in columns %}
+                            <option value="{{ col }}">{{ col }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+                <canvas id="csvChart" width="700" height="400"></canvas>
+            </div>
+        </div>
+        <!-- Scripts -->
+        <script src="{% static 'js/jquery.min.js'%}"></script>
+        <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+        <script src="{% static 'js/browser.min.js'%}"></script>
+        <script src="{% static 'js/breakpoints.min.js'%}"></script>
+        <script src="{% static 'js/util.js'%}"></script>
+        <script src="{% static 'js/main.js'%}"></script>
+        <script>
+            // context 데이터를 js로 전달
+            const rawData = JSON.parse("{{ data|safe|escapejs }}");
+
+            const xSelect = document.getElementById("x-col");
+            const ySelect = document.getElementById("y-col");
+            const ctx = document.getElementById("csvChart").getContext("2d");
+            let chart;
+
+            function getColumnData(col) {
+                return rawData.map((row) => {
+                    const v = row[col];
+                    const num = parseFloat(String(v).replace(/,/g, ""));
+                    return isNaN(num) ? v : num;
+                });
+            }
+
+            function updateChart() {
+                const xCol = xSelect.value;
+                const yCol = ySelect.value;
+                const xData = getColumnData(xCol);
+                const yData = getColumnData(yCol);
+
+                if (chart) chart.destroy();
+
+                chart = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: xData,
+                        datasets: [
+                            {
+                                label: `${yCol} (Y)`,
+                                data: yData,
+                                fill: false,
+                                tension: 0.2,
+                                borderWidth: 2,
+                                pointRadius: 3,
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: false,
+                        scales: {
+                            x: { title: { display: true, text: xCol } },
+                            y: { title: { display: true, text: yCol } },
+                        },
+                    },
+                });
+            }
+
+            updateChart();
+            xSelect.addEventListener("change", updateChart);
+            ySelect.addEventListener("change", updateChart);
+        </script>
+    </body>
+</html>

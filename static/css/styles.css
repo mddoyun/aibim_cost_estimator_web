@@ -1,0 +1,25 @@
+/* styles.css */
+
+.container {
+    margin: 40px auto;
+    width: 760px;
+    padding: 24px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(100, 120, 180, 0.11);
+}
+.selector-box {
+    margin-bottom: 24px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+label {
+    font-weight: 600;
+}
+select {
+    margin-left: 8px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid #aaa;
+}

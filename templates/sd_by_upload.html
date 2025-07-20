@@ -1,0 +1,1730 @@
+<!DOCTYPE html>
+<html lang="ko" class="bim-ui-dark">
+    <head>
+        <meta charset="UTF-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>AI-BIM Cost Estimator</title>
+        <!-- Favicon, Bootstrap, Style, PyScript, Chart.js, Tensorflow, PapaParse -->
+        <link rel="shortcut icon" type="image/png" href="icon.png" />
+        <link
+            rel="stylesheet"
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        />
+        <link
+            rel="stylesheet"
+            href="https://pyscript.net/latest/pyscript.css"
+        />
+
+        <style>
+            body {
+                font-family: "Helvetica Neue", Arial, sans-serif;
+                background: #f6f8fa;
+                color: #222;
+            }
+            header {
+                background: #32425a;
+                color: #fff;
+                font-size: 28px;
+                font-weight: bold;
+                padding: 12px;
+                text-align: center;
+            }
+            #branding {
+                position: absolute;
+                top: 5px;
+                right: 16px;
+                text-align: right;
+            }
+            .tabs {
+                display: flex;
+                gap: 2px;
+                background: #fff;
+                border-bottom: 1px solid #eee;
+            }
+            .tab {
+                flex: 1;
+                padding: 10px;
+                text-align: center;
+                cursor: pointer;
+                font-size: 18px;
+                color: #32425a;
+            }
+            .tab.active {
+                background: #242e3d;
+                color: #fff;
+                border-radius: 5px 5px 0 0;
+            }
+            .content {
+                display: none;
+                flex-direction: row;
+                gap: 0;
+                min-height: 600px;
+            }
+            .content.active {
+                display: flex;
+            }
+            .col-section {
+                flex: 1 0 0;
+                padding: 20px;
+                background: #fff;
+            }
+            /* Table Styling */
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            th,
+            td {
+                border: 1px solid #eee;
+                padding: 5px 6px;
+                font-size: 15px;
+            }
+            th {
+                background: #f5f6fa;
+            }
+            /* Responsive */
+            @media (max-width: 900px) {
+                .content {
+                    flex-direction: column;
+                }
+            }
+            /* Component Section UI */
+            .section-title {
+                font-size: 20px;
+                margin-bottom: 15px;
+            }
+            .small-label {
+                font-size: 12px;
+                color: #888;
+            }
+            .form-label {
+                font-weight: 500;
+            }
+            /* Log, Chart, Info */
+            #trainingLog {
+                background: #eef;
+                border-radius: 5px;
+                padding: 10px;
+                margin: 10px 0 0 0;
+                height: 120px;
+                overflow-y: auto;
+                font-size: 13px;
+                font-family: monospace;
+                display: none;
+            }
+            .charts-flex {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 20px;
+            }
+            .chart-box {
+                background: #f9f9f9;
+                border-radius: 8px;
+                padding: 15px;
+                box-shadow: 0 0 6px #0001;
+                flex: 1;
+                min-width: 320px;
+            }
+            /* 3D Viewer */
+            #viewer-container {
+                position: relative;
+                width: 100%;
+                min-height: 400px;
+            }
+            #info-box {
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                background: #fff9;
+                padding: 8px 14px;
+                border-radius: 8px;
+                font-size: 13px;
+                box-shadow: 0 0 4px #0002;
+                display: none;
+            }
+        </style>
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    </head>
+    <body>
+        <header>AI-BIM Cost Estimator</header>
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="showTab(0)">
+                개요정보 공사비예측
+            </div>
+            <div class="tab" onclick="showTab(1)">BIM모델 공사비예측</div>
+            <div class="tab" onclick="showTab(2)">인공지능 학습</div>
+            <div class="tab" onclick="showTab(3)">상세견적</div>
+        </div>
+
+        <!-- Tab 1: 개요정보 공사비예측 -->
+        <div class="content active" id="tab1">
+            <div class="col-section" style="max-width: 520px; min-width: 360px">
+                <div class="section-title">모델 파일 업로드</div>
+                <div class="row g-2 align-items-end">
+                    <div class="col-4">
+                        <label class="form-label"
+                            >모델 구조<br /><span class="small-label"
+                                >(trained-model.json)</span
+                            ></label
+                        >
+                        <input
+                            type="file"
+                            id="modelFile"
+                            accept=".json"
+                            class="form-control form-control-sm"
+                        />
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label"
+                            >가중치<br /><span class="small-label"
+                                >(.weights.bin)</span
+                            ></label
+                        >
+                        <input
+                            type="file"
+                            id="weightsFile"
+                            accept=".bin"
+                            class="form-control form-control-sm"
+                        />
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label"
+                            >메타데이터<br /><span class="small-label"
+                                >(metadata.json)</span
+                            ></label
+                        >
+                        <input
+                            type="file"
+                            id="metaFile"
+                            accept=".json"
+                            class="form-control form-control-sm"
+                        />
+                    </div>
+                </div>
+                <button id="loadModelBtn" class="btn btn-primary btn-sm mt-3">
+                    모델 로드
+                </button>
+                <form id="modelInputs" class="row mt-3 g-2"></form>
+                <button
+                    id="predictBtn"
+                    class="btn btn-success mt-2 mb-2"
+                    disabled
+                >
+                    공사비 예측
+                </button>
+                <div id="modelOutputs" class="row g-2"></div>
+            </div>
+            <div class="col-section">
+                <div class="section-title">예상 공사비</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>항목</th>
+                            <th>예측값</th>
+                        </tr>
+                    </thead>
+                    <tbody id="outputsTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab 2: BIM모델 공사비예측 -->
+        <div class="content" id="tab2">
+            <div class="col-section" style="min-width: 380px; max-width: 500px">
+                <div class="section-title">BIM 파일 업로드 & 옵션</div>
+                <div class="mb-2">
+                    <input
+                        type="file"
+                        id="ifcFileInput"
+                        accept=".ifc"
+                        class="form-control"
+                    />
+                    <button
+                        class="btn btn-secondary btn-sm mt-2"
+                        onclick="loadBimModel()"
+                    >
+                        BIM 모델 불러오기
+                    </button>
+                </div>
+                <div>
+                    <label class="form-label">외벽마감</label>
+                    <select class="form-select mb-2" id="finishSelect">
+                        <option value="">선택...</option>
+                        <option>석재</option>
+                        <option>알루미늄복합판넬</option>
+                        <option>스타코</option>
+                        <option>페인트</option>
+                        <option>기타</option>
+                    </select>
+                    <label class="form-label">착공년도</label>
+                    <select class="form-select mb-2" id="yearSelect">
+                        <option value="">선택...</option>
+                        <option>2024</option>
+                        <option>2025</option>
+                        <option>2026</option>
+                        <option>2027</option>
+                        <option>2028 이후</option>
+                    </select>
+                    <label class="form-label">모델 선택</label>
+                    <select class="form-select mb-2" id="aiModelSelect">
+                        <option value="">선택...</option>
+                        <option>사무실 및 근린생활시설</option>
+                        <option>주택(coming soon)</option>
+                        <option>병원(coming soon)</option>
+                        <option>공장(coming soon)</option>
+                    </select>
+                </div>
+                <button class="btn btn-success mt-2" onclick="predictCost2()">
+                    BIM 기반 공사비 예측
+                </button>
+                <hr />
+                <table>
+                    <thead>
+                        <tr>
+                            <th>번호</th>
+                            <th>이름</th>
+                            <th>값</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>1</td>
+                            <td>벽면적</td>
+                            <td id="wallArea">-</td>
+                        </tr>
+                        <tr>
+                            <td>2</td>
+                            <td>바닥면적</td>
+                            <td id="floorArea">-</td>
+                        </tr>
+                        <tr>
+                            <td>3</td>
+                            <td>실개수</td>
+                            <td id="roomCount">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="col-section" style="flex: 2">
+                <div id="viewer-container"></div>
+                <div id="info-box">
+                    Selected: <span id="selected-name">None</span><br />
+                    <pre id="selected-attributes"></pre>
+                </div>
+            </div>
+            <div class="col-section">
+                <div class="section-title">예상 공사비</div>
+                <table>
+                    <tbody>
+                        <tr>
+                            <td>총 공사비</td>
+                            <td id="totalCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>건축공사비</td>
+                            <td id="buildingCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>토목공사비</td>
+                            <td id="civilCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>조경공사비</td>
+                            <td id="landscapingCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>기계공사비</td>
+                            <td id="mechanicalCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>전기공사비</td>
+                            <td id="electricalCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>기계소방공사비</td>
+                            <td id="mechFireCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>전기소방공사비</td>
+                            <td id="elecFireCost2">-</td>
+                        </tr>
+                        <tr>
+                            <td>기타공사비</td>
+                            <td id="otherCost2">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="chart-box mt-2">
+                    <canvas
+                        id="scatterChart2"
+                        width="320"
+                        height="120"
+                    ></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: 인공지능 학습 -->
+        <div class="content" id="tab3">
+            <div class="col-section" style="max-width: 500px">
+                <div class="section-title">CSV 데이터 업로드</div>
+                <input
+                    type="file"
+                    id="csvFileInput"
+                    accept=".csv"
+                    class="form-control mb-2"
+                />
+                <div id="columnSelectors" style="display: none">
+                    <div>
+                        <label class="form-label">입력 칼럼:</label>
+                        <div id="inputColumnsContainer"></div>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-primary"
+                            onclick="addInputColumn()"
+                        >
+                            + 입력 칼럼 추가
+                        </button>
+                    </div>
+                    <div class="mt-2">
+                        <label class="form-label">결과 칼럼:</label>
+                        <div id="outputColumnsContainer"></div>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-primary"
+                            onclick="addOutputColumn()"
+                        >
+                            + 결과 칼럼 추가
+                        </button>
+                    </div>
+                    <button
+                        id="prepareTrainButton"
+                        type="button"
+                        class="btn btn-primary mt-2"
+                        onclick="prepareTraining()"
+                    >
+                        학습 준비
+                    </button>
+                </div>
+                <div id="settings" style="display: none">
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label for="epochs">Epochs:</label>
+                            <input
+                                type="number"
+                                id="epochs"
+                                value="2000"
+                                min="1"
+                                class="form-control form-control-sm"
+                            />
+                        </div>
+                        <div class="col-6">
+                            <label for="batchSize">Batch Size:</label>
+                            <input
+                                type="number"
+                                id="batchSize"
+                                value="32"
+                                min="1"
+                                class="form-control form-control-sm"
+                            />
+                        </div>
+                        <div class="col-6 mt-2">
+                            <label for="learningRate">Learning Rate:</label>
+                            <input
+                                type="number"
+                                id="learningRate"
+                                value="0.01"
+                                step="0.0001"
+                                min="0.0001"
+                                class="form-control form-control-sm"
+                            />
+                        </div>
+                        <div class="col-6 mt-2">
+                            <label for="valSplit">Validation Split:</label>
+                            <input
+                                type="number"
+                                id="valSplit"
+                                value="0.2"
+                                step="0.1"
+                                min="0"
+                                max="0.5"
+                                class="form-control form-control-sm"
+                            />
+                        </div>
+                        <div class="col-6 mt-2">
+                            <label for="optimizerSelect">Optimizer:</label>
+                            <select
+                                id="optimizerSelect"
+                                class="form-select form-select-sm"
+                            >
+                                <option value="adam" selected>adam</option>
+                                <option value="sgd">sgd</option>
+                                <option value="rmsprop">rmsprop</option>
+                            </select>
+                        </div>
+                        <div class="col-6 mt-2">
+                            <label for="hiddenLayers">Hidden Layers:</label>
+                            <select
+                                id="hiddenLayers"
+                                class="form-select form-select-sm"
+                            >
+                                <option value="0">0</option>
+                                <option value="1" selected>1</option>
+                                <option value="2">2</option>
+                            </select>
+                        </div>
+                        <div class="col-6 mt-2">
+                            <label for="unitsLayer1">Units Layer 1:</label>
+                            <input
+                                type="number"
+                                id="unitsLayer1"
+                                value="64"
+                                min="1"
+                                class="form-control form-control-sm"
+                            />
+                        </div>
+                        <div class="col-6 mt-2">
+                            <label for="unitsLayer2">Units Layer 2:</label>
+                            <input
+                                type="number"
+                                id="unitsLayer2"
+                                value="32"
+                                min="1"
+                                class="form-control form-control-sm"
+                            />
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onclick="trainAndPredict()"
+                        id="trainButton"
+                        class="btn btn-success mt-2"
+                    >
+                        학습 시작
+                    </button>
+                </div>
+                <div id="trainingLog"></div>
+            </div>
+            <div class="col-section" style="flex: 2">
+                <div class="charts-flex" id="charts"></div>
+            </div>
+        </div>
+        <div class="content" id="tab4">
+            <!-- 상단 바 -->
+            <div class="top-bar">
+                <label>공사코드 검색:</label>
+                <input type="text" id="searchBox" placeholder="공사코드 검색" />
+                <button id="addCodeBtn">공사코드 추가</button>
+                <button id="removeCodeBtn">공사코드 삭제</button>
+                <button id="loadIFCBtn">IFC 열기</button>
+                <button id="saveIFCBtn">IFC 저장</button>
+                <button id="loadCodeBtn">코드리스트 열기</button>
+            </div>
+
+            <ul class="search-results" id="searchResults"></ul>
+
+            <div class="container">
+                <!-- 좌측 패널: 그룹/객체 테이블 -->
+                <div class="left-panel">
+                    <div class="group-bar">
+                        <label
+                            >1단계 그룹:
+                            <select id="groupBy1">
+                                <option>없음</option>
+                            </select></label
+                        >
+                        <label
+                            >2단계 그룹:
+                            <select id="groupBy2">
+                                <option>없음</option>
+                            </select></label
+                        >
+                        <label
+                            >3단계 그룹:
+                            <select id="groupBy3">
+                                <option>없음</option>
+                            </select></label
+                        >
+                    </div>
+                    <div class="ifc-table" id="ifcTableContainer"></div>
+                </div>
+
+                <!-- 우측 패널: 상세/요약 -->
+                <div class="right-panel">
+                    <table class="code-detail-table" id="codeDetailTable">
+                        <thead>
+                            <tr>
+                                <th>공사코드</th>
+                                <th>명칭</th>
+                                <th>규격</th>
+                                <th>단위</th>
+                                <th>산식</th>
+                                <th>수량</th>
+                                <th>단가</th>
+                                <th>금액</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <div class="total-label" id="totalLabel">총 금액: 0 원</div>
+                    <div style="height: 12px"></div>
+                    <div style="font-weight: bold">전체 코드 요약</div>
+                    <table class="summary-table" id="summaryTable">
+                        <thead>
+                            <tr>
+                                <th>공사코드</th>
+                                <th>공종</th>
+                                <th>명칭</th>
+                                <th>규격</th>
+                                <th>단위</th>
+                                <th>수량</th>
+                                <th>재료비</th>
+                                <th>노무비</th>
+                                <th>총금액</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <div class="summary-total-label" id="summaryTotalLabel">
+                        요약 총 금액: 0 원
+                    </div>
+                </div>
+            </div>
+
+            <input
+                type="file"
+                id="codeFileInput"
+                accept=".csv"
+                class="hidden"
+            />
+            <input type="file" id="ifcFileInput" accept=".ifc" class="hidden" />
+
+            <script>
+                // 내부 데이터 (임시 - 파일 로드 필요)
+                let codeData = {};
+                let objectData = []; // IFC 객체 리스트
+                let groupedObjects = [];
+                let collapsedGroups = new Set();
+                let selectedCode = null;
+                let selectedObjectRows = [];
+                let headers = [
+                    "GlobalId",
+                    "Name",
+                    "IfcClass",
+                    "CostItems",
+                    "총금액",
+                    "SpatialContainer",
+                ];
+                // 실제 사용시 ifc.js, PapaParse 등 라이브러리 활용 필요
+
+                // ---- 코드리스트(CSV) 로드 ----
+                document.getElementById("loadCodeBtn").onclick = () => {
+                    document.getElementById("codeFileInput").click();
+                };
+                document
+                    .getElementById("codeFileInput")
+                    .addEventListener("change", function (evt) {
+                        const file = evt.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = function (e) {
+                            codeData = {};
+                            const lines = e.target.result
+                                .split(/\r?\n/)
+                                .filter((x) => x.trim());
+                            const cols = lines[0]
+                                .split(",")
+                                .map((x) => x.trim());
+                            for (let i = 1; i < lines.length; ++i) {
+                                const row = lines[i]
+                                    .split(",")
+                                    .map((x) => x.trim());
+                                const code = row[cols.indexOf("코드")];
+                                if (!code) continue;
+                                codeData[code] = {};
+                                cols.forEach((col, j) => {
+                                    codeData[code][col] = row[j] || "";
+                                });
+                            }
+                            alert(
+                                "코드리스트 로드 완료 (" +
+                                    Object.keys(codeData).length +
+                                    "건)"
+                            );
+                            updateSearchResults();
+                        };
+                        reader.readAsText(file, "utf-8");
+                    });
+
+                // ---- 검색 기능 ----
+                document
+                    .getElementById("searchBox")
+                    .addEventListener("input", updateSearchResults);
+                function updateSearchResults() {
+                    const q = document
+                        .getElementById("searchBox")
+                        .value.trim()
+                        .toLowerCase();
+                    const ul = document.getElementById("searchResults");
+                    ul.innerHTML = "";
+                    if (!q || Object.keys(codeData).length === 0) return;
+                    Object.entries(codeData).forEach(([code, data]) => {
+                        if (
+                            code.toLowerCase().includes(q) ||
+                            (data["명칭"] || "").toLowerCase().includes(q)
+                        ) {
+                            const li = document.createElement("li");
+                            li.textContent = `${code} - ${data["명칭"]} (${data["규격"]}, ${data["단위"]})`;
+                            li.onclick = () => {
+                                Array.from(ul.children).forEach((c) =>
+                                    c.classList.remove("selected")
+                                );
+                                li.classList.add("selected");
+                                selectedCode = code;
+                            };
+                            ul.appendChild(li);
+                        }
+                    });
+                }
+
+                // ---- 그룹핑 콤보박스 ----
+                for (let i = 1; i <= 3; ++i) {
+                    document.getElementById("groupBy" + i).onchange =
+                        updateGroupedTable;
+                }
+
+                // ---- 객체 테이블 렌더링 (예시) ----
+                function updateGroupedTable() {
+                    // objectData는 IFC 로드 후 갱신
+                    // 여기서는 샘플/모킹 데이터 (실제 ifc.js 연동 필요)
+                    const container =
+                        document.getElementById("ifcTableContainer");
+                    container.innerHTML = "";
+                    // 샘플 헤더
+                    const tbl = document.createElement("table");
+                    const thead = document.createElement("thead");
+                    const trh = document.createElement("tr");
+                    headers.forEach((h) => {
+                        const th = document.createElement("th");
+                        th.textContent = h;
+                        trh.appendChild(th);
+                    });
+                    thead.appendChild(trh);
+                    tbl.appendChild(thead);
+                    const tbody = document.createElement("tbody");
+
+                    // 그룹핑 적용 예시 (실제 데이터/선택 로직 구현 필요)
+                    objectData.forEach((obj, rowIdx) => {
+                        const tr = document.createElement("tr");
+                        headers.forEach((h) => {
+                            const td = document.createElement("td");
+                            td.textContent = obj[h] || "";
+                            tr.appendChild(td);
+                        });
+                        tr.onclick = () => {
+                            selectObjectRow(rowIdx);
+                        };
+                        if (selectedObjectRows.includes(rowIdx))
+                            tr.style.background = "#e0f2ff";
+                        tbody.appendChild(tr);
+                    });
+                    tbl.appendChild(tbody);
+                    container.appendChild(tbl);
+                }
+
+                function selectObjectRow(rowIdx) {
+                    selectedObjectRows = [rowIdx];
+                    updateGroupedTable();
+                    updateDetailTable();
+                }
+
+                // ---- 코드 추가/삭제 버튼 ----
+                document.getElementById("addCodeBtn").onclick = () => {
+                    if (!selectedCode || selectedObjectRows.length === 0)
+                        return;
+                    selectedObjectRows.forEach((rowIdx) => {
+                        const obj = objectData[rowIdx];
+                        let codes = (obj["CostItems"] || "")
+                            .split("+")
+                            .map((x) => x.trim())
+                            .filter(Boolean);
+                        if (!codes.includes(selectedCode))
+                            codes.push(selectedCode);
+                        obj["CostItems"] = codes.join("+");
+                    });
+                    updateGroupedTable();
+                    updateDetailTable();
+                    updateSummaryTable();
+                };
+                document.getElementById("removeCodeBtn").onclick = () => {
+                    if (selectedObjectRows.length === 0) return;
+                    // 예시: 우측 상세에서 선택한 코드 삭제. 실제 구현은 상세 테이블에서 클릭한 행/코드 추적 필요
+                    selectedObjectRows.forEach((rowIdx) => {
+                        const obj = objectData[rowIdx];
+                        let codes = (obj["CostItems"] || "")
+                            .split("+")
+                            .map((x) => x.trim())
+                            .filter(Boolean);
+                        codes = codes.filter((code) => code !== selectedCode);
+                        obj["CostItems"] = codes.join("+");
+                    });
+                    updateGroupedTable();
+                    updateDetailTable();
+                    updateSummaryTable();
+                };
+
+                // ---- 코드 상세 테이블 (우측) ----
+                function updateDetailTable() {
+                    const tbody = document
+                        .getElementById("codeDetailTable")
+                        .querySelector("tbody");
+                    tbody.innerHTML = "";
+                    let total = 0;
+                    if (selectedObjectRows.length === 0) return;
+                    const obj = objectData[selectedObjectRows[0]];
+                    let codes = (obj["CostItems"] || "")
+                        .split("+")
+                        .map((x) => x.trim())
+                        .filter(Boolean);
+                    codes.forEach((code) => {
+                        if (!codeData[code]) return;
+                        const data = codeData[code];
+                        // 산식 파싱/계산 예시 (실제 구현은 JS eval 등 제한적 허용 필요)
+                        let qty = 1; // 예시로 1, 실제로는 산식 계산 필요
+                        let unitPrice = parseFloat(data["합계단가"] || "0");
+                        let rowTotal = qty * unitPrice;
+                        total += rowTotal;
+                        const tr = document.createElement("tr");
+                        [
+                            code,
+                            data["명칭"],
+                            data["규격"],
+                            data["단위"],
+                            data["산식"],
+                            qty,
+                            unitPrice,
+                            rowTotal,
+                        ].forEach((val, i) => {
+                            const td = document.createElement("td");
+                            td.textContent =
+                                i === 5 || i === 6 || i === 7
+                                    ? Number(val).toLocaleString("ko-KR", {
+                                          maximumFractionDigits: 2,
+                                      })
+                                    : val;
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                    document.getElementById("totalLabel").textContent =
+                        "총 금액: " + total.toLocaleString("ko-KR") + " 원";
+                }
+
+                // ---- 요약 테이블 (하단) ----
+                function updateSummaryTable() {
+                    const tbody = document
+                        .getElementById("summaryTable")
+                        .querySelector("tbody");
+                    tbody.innerHTML = "";
+                    let totalSum = 0;
+                    // (실제 로직에서는 코드별 그룹 합계 계산)
+                    Object.values(codeData).forEach((data) => {
+                        // 예시: 코드별 합계
+                        let sum = 0;
+                        // (여기서 objectData에 매핑된 코드/수량/단가 등 누적)
+                        // sum += ...;
+                        totalSum += sum;
+                        // 예시 row
+                        const tr = document.createElement("tr");
+                        [
+                            data["코드"],
+                            data["공종"],
+                            data["명칭"],
+                            data["규격"],
+                            data["단위"],
+                            "",
+                            "",
+                            "",
+                            sum,
+                        ].forEach((val) => {
+                            const td = document.createElement("td");
+                            td.textContent = val;
+                            tr.appendChild(td);
+                        });
+                        tbody.appendChild(tr);
+                    });
+                    document.getElementById("summaryTotalLabel").textContent =
+                        "요약 총 금액: " +
+                        totalSum.toLocaleString("ko-KR") +
+                        " 원";
+                }
+
+                // ---- IFC 파일 로드/저장 (ifc.js 필요, 샘플 생략) ----
+                document.getElementById("loadIFCBtn").onclick = () => {
+                    alert(
+                        "IFC 파일 로딩은 실제로 ifc.js 라이브러리 필요합니다!"
+                    );
+                    // 실제 환경에서 ifc.js로 파싱 후 objectData/headers 갱신, updateGroupedTable() 호출
+                };
+                document.getElementById("saveIFCBtn").onclick = () => {
+                    alert("IFC 저장도 ifc.js와 파일쓰기 권한 필요");
+                    // 실제 환경에서 수정된 objectData를 IFC로 변환/저장 구현
+                };
+
+                // ---- 데모용: 초기화 ----
+                // 샘플 데이터 (실제 로딩시 objectData, headers 등 갱신)
+                objectData = [
+                    {
+                        GlobalId: "123",
+                        Name: "벽체1",
+                        IfcClass: "IfcWall",
+                        CostItems: "A001",
+                        총금액: 10000,
+                        SpatialContainer: "Level1",
+                    },
+                    {
+                        GlobalId: "456",
+                        Name: "기둥1",
+                        IfcClass: "IfcColumn",
+                        CostItems: "",
+                        총금액: 0,
+                        SpatialContainer: "Level1",
+                    },
+                ];
+                updateGroupedTable();
+            </script>
+        </div>
+        <!-- Scripts: Tab logic, Model load, AI train, BIM -->
+        <script>
+            // ---------- Tab Logic ----------
+            function showTab(idx) {
+                Array.from(document.getElementsByClassName("tab")).forEach(
+                    (t, i) => t.classList.toggle("active", i === idx)
+                );
+                Array.from(document.getElementsByClassName("content")).forEach(
+                    (c, i) => c.classList.toggle("active", i === idx)
+                );
+            }
+            // ---------- Tab 1: 모델 로드 및 예측 ----------
+            let loadedModel = null,
+                modelMeta = null;
+            document.getElementById("loadModelBtn").onclick = async () => {
+                const mf = document.getElementById("modelFile").files[0];
+                const wf = document.getElementById("weightsFile").files[0];
+                const meta = document.getElementById("metaFile").files[0];
+                if (!mf || !wf || !meta)
+                    return alert("모든 파일을 선택하세요.");
+                // Load model & weights
+                const modelJson = JSON.parse(await mf.text());
+                const weightNames = modelJson.weightsManifest.flatMap(
+                    (m) => m.paths
+                );
+                const wfBuffer = await wf.arrayBuffer();
+                const renamedWeightFiles = weightNames.map(
+                    (name) => new File([wfBuffer], name, { type: wf.type })
+                );
+                loadedModel = await tf.loadLayersModel(
+                    tf.io.browserFiles([mf, ...renamedWeightFiles])
+                );
+                // Metadata
+                modelMeta = JSON.parse(await meta.text());
+                // UI 생성
+                const form = document.getElementById("modelInputs");
+                form.innerHTML = "";
+                modelMeta.inputColumns.forEach((col) => {
+                    form.innerHTML += `
+                    <div class="col-6">
+                        <label class="form-label">${col}</label>
+                        <input type="number" step="any" id="inp_${col}" class="form-control" placeholder="${col} 입력"/>
+                    </div>`;
+                });
+                document.getElementById("modelOutputs").innerHTML =
+                    modelMeta.outputColumns
+                        .map(
+                            (col) =>
+                                `<div class="col-6">
+                        <label class="form-label">${col}</label>
+                        <div id="out_${col}" class="form-control">-</div>
+                    </div>`
+                        )
+                        .join("");
+                document.getElementById("predictBtn").disabled = false;
+                alert("모델과 메타데이터가 정상 로드되었습니다.");
+            };
+            document.getElementById("predictBtn").onclick = () => {
+                if (!loadedModel || !modelMeta) return;
+                const inputs = modelMeta.inputColumns.map((col) => {
+                    const v = parseFloat(
+                        document.getElementById("inp_" + col).value
+                    );
+                    return isNaN(v) ? 0 : v;
+                });
+                const preds = loadedModel
+                    .predict(tf.tensor2d([inputs]))
+                    .arraySync()[0];
+                // 표에 출력
+                const outTable = document.getElementById("outputsTable");
+                outTable.innerHTML = "";
+                modelMeta.outputColumns.forEach((col, i) => {
+                    document.getElementById("out_" + col).innerText =
+                        preds[i].toFixed(2);
+                    outTable.innerHTML += `<tr><td>${col}</td><td>${preds[
+                        i
+                    ].toLocaleString()}</td></tr>`;
+                });
+            };
+            // ---------- Tab 2: BIM 기능/임시 함수 (실제 연동 필요) ----------
+            function loadBimModel() {
+                // 임시 BIM 데이터 세팅
+                document.getElementById("wallArea").innerText = 2272;
+                document.getElementById("floorArea").innerText = 1890;
+                document.getElementById("roomCount").innerText = 53;
+                // 3D Viewer는 별도 모듈로 유지 (생략, 기존 three.js + pyodide 활용)
+                const input = document.getElementById("ifcFileInput");
+                if (!input.files || input.files.length === 0) {
+                    alert("IFC 파일을 먼저 선택하세요.");
+                    return;
+                }
+                // 파일 선택이 되어 있으면 handleIfcFile 함수에 input을 전달
+                handleIfcFile({ target: input });
+            }
+            function predictCost2() {
+                // BIM 값 기반(없으면 0)
+                const wallArea = window.bimWallArea || 0;
+                const floorArea = window.bimFloorArea || 0;
+                const roomCount = window.bimRoomCount || 0;
+                // 실제 예측 로직 (원하는대로 수정)
+                // 여기선 floorArea로 총 공사비 예시 계산
+                const landArea = wallArea;
+                const totalArea = floorArea;
+                const buildingArea = floorArea;
+                const totalCost =
+                    landArea * 100000 +
+                    totalArea * 200000 +
+                    buildingArea * 300000;
+                const buildingCost = totalCost * 0.5,
+                    civilCost = totalCost * 0.2,
+                    landscapingCost = totalCost * 0.1;
+                const mechanicalCost = totalCost * 0.05,
+                    electricalCost = totalCost * 0.05,
+                    mechFireCost = totalCost * 0.04;
+                const elecFireCost = totalCost * 0.03,
+                    otherCost = totalCost * 0.03;
+                const setVal = (id, v) =>
+                    (document.getElementById(id).innerText =
+                        v.toLocaleString());
+                setVal("totalCost2", totalCost);
+                setVal("buildingCost2", buildingCost);
+                setVal("civilCost2", civilCost);
+                setVal("landscapingCost2", landscapingCost);
+                setVal("mechanicalCost2", mechanicalCost);
+                setVal("electricalCost2", electricalCost);
+                setVal("mechFireCost2", mechFireCost);
+                setVal("elecFireCost2", elecFireCost);
+                setVal("otherCost2", otherCost);
+                // 그래프
+                if (window.bimChart2) window.bimChart2.destroy();
+                window.bimChart2 = new Chart(
+                    document.getElementById("scatterChart2").getContext("2d"),
+                    {
+                        type: "scatter",
+                        data: {
+                            datasets: [
+                                {
+                                    label: "총 공사비(통계자료)",
+                                    data: [
+                                        { x: 1519, y: 2449260000 },
+                                        { x: 2431, y: 4341534056 },
+                                        { x: 109, y: 645687000 },
+                                    ],
+                                    backgroundColor: "rgba(0, 123, 255, 0.5)",
+                                    pointRadius: 5,
+                                },
+                                {
+                                    label: "총 공사비(예측)",
+                                    data: [{ x: floorArea, y: totalCost }],
+                                    backgroundColor: "rgba(255, 99, 132, 1)",
+                                    pointRadius: 10,
+                                },
+                            ],
+                        },
+                        options: {
+                            scales: {
+                                x: { type: "linear", position: "bottom" },
+                            },
+                        },
+                    }
+                );
+            }
+
+            // ---------- Tab 3: AI 학습 ----------
+            let headersList = [],
+                lossChart,
+                predictionChart;
+            document.getElementById("csvFileInput").onchange = function (
+                event
+            ) {
+                const file = event.target.files[0];
+                if (!file) return;
+                Papa.parse(file, {
+                    preview: 1,
+                    header: true,
+                    complete: function (results) {
+                        headersList = results.meta.fields;
+                        document.getElementById(
+                            "inputColumnsContainer"
+                        ).innerHTML = "";
+                        document.getElementById(
+                            "outputColumnsContainer"
+                        ).innerHTML = "";
+                        addInputColumn();
+                        addOutputColumn();
+                        document.getElementById(
+                            "columnSelectors"
+                        ).style.display = "block";
+                    },
+                });
+            };
+            function addInputColumn() {
+                addColumn("inputColumnsContainer", "input-column-select");
+            }
+            function addOutputColumn() {
+                addColumn("outputColumnsContainer", "output-column-select");
+            }
+            function addColumn(containerId, selectClass) {
+                const container = document.getElementById(containerId);
+                const row = document.createElement("div");
+                row.className = "d-flex align-items-center mb-1";
+                const select = document.createElement("select");
+                select.className = `form-select form-select-sm ${selectClass}`;
+                headersList.forEach((h) =>
+                    select.appendChild(
+                        Object.assign(document.createElement("option"), {
+                            value: h,
+                            text: h,
+                        })
+                    )
+                );
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "btn btn-sm btn-outline-danger ms-2";
+                btn.textContent = "–";
+                btn.onclick = () => container.removeChild(row);
+                row.appendChild(select);
+                row.appendChild(btn);
+                container.appendChild(row);
+            }
+            function prepareTraining() {
+                const file = document.getElementById("csvFileInput").files[0];
+                if (!file) return alert("CSV 파일을 선택해주세요.");
+                Papa.parse(file, {
+                    header: true,
+                    dynamicTyping: true,
+                    complete: function (results) {
+                        const raw = results.data.filter(
+                            (r) => r && Object.keys(r).length
+                        );
+                        const inputCols = Array.from(
+                            document.querySelectorAll(".input-column-select")
+                        ).map((s) => s.value);
+                        const outputCols = Array.from(
+                            document.querySelectorAll(".output-column-select")
+                        ).map((s) => s.value);
+                        window.inputData = raw.map((r) =>
+                            inputCols.map((c) => r[c])
+                        );
+                        window.outputData = raw.map((r) =>
+                            outputCols.map((c) => r[c])
+                        );
+                        if (window.inputData.length < 5)
+                            return alert("데이터가 너무 적습니다.");
+                        document.getElementById("settings").style.display =
+                            "block";
+                        document.getElementById("trainingLog").innerText =
+                            "데이터 준비 완료!";
+                        document.getElementById("trainingLog").style.display =
+                            "block";
+                    },
+                });
+            }
+            async function trainAndPredict() {
+                const logEl = document.getElementById("trainingLog");
+                logEl.innerText = "학습 시작...\n";
+                const epochs = +document.getElementById("epochs").value;
+                const batchSize = +document.getElementById("batchSize").value;
+                const lr = +document.getElementById("learningRate").value;
+                const valSplit = +document.getElementById("valSplit").value;
+                const optimizerName =
+                    document.getElementById("optimizerSelect").value;
+                const hiddenCount =
+                    +document.getElementById("hiddenLayers").value;
+                const units1 = +document.getElementById("unitsLayer1").value;
+                const units2 = +document.getElementById("unitsLayer2").value;
+                // 모델 정의
+                const inputDim = window.inputData[0].length,
+                    outputDim = window.outputData[0].length;
+                window.model = tf.sequential();
+                if (hiddenCount >= 1)
+                    window.model.add(
+                        tf.layers.dense({
+                            units: units1,
+                            inputShape: [inputDim],
+                            activation: "relu",
+                        })
+                    );
+                if (hiddenCount >= 2)
+                    window.model.add(
+                        tf.layers.dense({ units: units2, activation: "relu" })
+                    );
+                window.model.add(tf.layers.dense({ units: outputDim }));
+                const optimizer =
+                    optimizerName === "sgd"
+                        ? tf.train.sgd(lr)
+                        : optimizerName === "rmsprop"
+                        ? tf.train.rmsprop(lr)
+                        : tf.train.adam(lr);
+                window.model.compile({ optimizer, loss: "meanSquaredError" });
+                const xTensor = tf.tensor2d(window.inputData),
+                    yTensor = tf.tensor2d(window.outputData);
+                const lossHistory = [],
+                    valLossHistory = [];
+                await window.model.fit(xTensor, yTensor, {
+                    epochs,
+                    batchSize,
+                    validationSplit: valSplit,
+                    callbacks: {
+                        onEpochEnd: (epoch, logs) => {
+                            logEl.innerText += `Epoch ${
+                                epoch + 1
+                            }: loss=${logs.loss.toFixed(
+                                4
+                            )}, val_loss=${logs.val_loss.toFixed(4)}\n`;
+                            logEl.scrollTop = logEl.scrollHeight;
+                            lossHistory.push(logs.loss);
+                            valLossHistory.push(logs.val_loss);
+                            updateLossChart(lossHistory, valLossHistory);
+                        },
+                    },
+                });
+                // 예측 그래프
+                const preds = await window.model.predict(xTensor).array();
+                const inputs = window.inputData.map((d) => d[0]);
+                const actuals = window.outputData.map((d) => d[0]);
+                updatePredictionChart(
+                    inputs,
+                    actuals,
+                    preds.map((d) => d[0])
+                );
+                // 모델 저장/메타 저장
+                await window.model.save("downloads://trained-model");
+                const inputCols = Array.from(
+                    document.querySelectorAll(".input-column-select")
+                ).map((s) => s.value);
+                const outputCols = Array.from(
+                    document.querySelectorAll(".output-column-select")
+                ).map((s) => s.value);
+                const meta = {
+                    inputColumns: inputCols,
+                    outputColumns: outputCols,
+                };
+                const blob = new Blob([JSON.stringify(meta, null, 2)], {
+                    type: "application/json",
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "trained-model-metadata.json";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+            }
+            function updateLossChart(lossHistory, valLossHistory) {
+                const ctx =
+                    document
+                        .getElementById("charts")
+                        .querySelector("#lossChart") ||
+                    createCanvas("lossChart", "Loss & Val Loss");
+                if (!lossChart) {
+                    lossChart = new Chart(ctx.getContext("2d"), {
+                        type: "line",
+                        data: {
+                            labels: [...Array(lossHistory.length).keys()].map(
+                                (i) => i + 1
+                            ),
+                            datasets: [
+                                {
+                                    label: "Loss",
+                                    data: lossHistory,
+                                    fill: false,
+                                },
+                                {
+                                    label: "Val Loss",
+                                    data: valLossHistory,
+                                    fill: false,
+                                },
+                            ],
+                        },
+                    });
+                } else {
+                    lossChart.data.labels = [
+                        ...Array(lossHistory.length).keys(),
+                    ].map((i) => i + 1);
+                    lossChart.data.datasets[0].data = lossHistory;
+                    lossChart.data.datasets[1].data = valLossHistory;
+                    lossChart.update();
+                }
+            }
+            function updatePredictionChart(inputs, actuals, predictions) {
+                const ctx =
+                    document
+                        .getElementById("charts")
+                        .querySelector("#predChart") ||
+                    createCanvas("predChart", "Actual vs Predicted");
+                if (predictionChart) predictionChart.destroy();
+                predictionChart = new Chart(ctx.getContext("2d"), {
+                    type: "scatter",
+                    data: {
+                        datasets: [
+                            {
+                                label: "Actual",
+                                data: inputs.map((x, i) => ({
+                                    x,
+                                    y: actuals[i],
+                                })),
+                            },
+                            {
+                                label: "Pred",
+                                data: inputs.map((x, i) => ({
+                                    x,
+                                    y: predictions[i],
+                                })),
+                            },
+                        ],
+                    },
+                });
+            }
+            function createCanvas(id, title) {
+                const container = document.getElementById("charts");
+                container.style.display = "flex";
+                const div = document.createElement("div");
+                div.className = "chart-box";
+                const h3 = document.createElement("h5");
+                h3.innerText = title;
+                div.appendChild(h3);
+                const canvas = document.createElement("canvas");
+                canvas.id = id;
+                div.appendChild(canvas);
+                container.appendChild(div);
+                return canvas;
+            }
+            // ---------- 초기 진입 ----------
+            showTab(0);
+        </script>
+        <!-- BIM 3D Viewer + IFCOpenShell + Three.js + pyodide -->
+        <!-- 1. importmap & pyodide (맨 위 head~body 사이에 이미 있으면 생략) -->
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://unpkg.com/three@0.141.0/build/three.module.js",
+                    "OrbitControls": "https://unpkg.com/three@0.141.0/examples/jsm/controls/OrbitControls.js"
+                }
+            }
+        </script>
+        <script src="https://cdn.jsdelivr.net/pyodide/v0.22.0a1/full/pyodide.js"></script>
+        <script
+            async
+            src="https://unpkg.com/es-module-shims@1.3.6/dist/es-module-shims.js"
+        ></script>
+
+        <!-- 2. BIM 3D Viewer (Tab2) 완성본! -->
+        <script type="module">
+            import * as THREE from "three";
+            import { OrbitControls } from "OrbitControls";
+
+            let pyodide = null,
+                ifc = null,
+                lastSelected = null,
+                renderer,
+                scene,
+                camera,
+                controls;
+
+            async function preparePyodideAndIfcOpenShell() {
+                if (window.viewer_ready) return;
+                document.getElementById("viewer-container").innerHTML =
+                    "<div style='color:#666;text-align:center;'>Pyodide/IfcOpenShell 로딩 중...</div>";
+                pyodide = await loadPyodide();
+                await pyodide.loadPackage("micropip");
+                const micropip = pyodide.pyimport("micropip");
+                await micropip.install("IfcOpenShell-0.7.0-py3-none-any.whl");
+                window.viewer_ready = true;
+                document.getElementById("viewer-container").innerHTML = "";
+            }
+
+            // "BIM 모델 불러오기" 버튼 이벤트
+            document.querySelector("#tab2 .btn.btn-secondary").onclick =
+                async function (e) {
+                    e.preventDefault();
+                    await preparePyodideAndIfcOpenShell();
+                    const input = document.getElementById("ifcFileInput");
+                    if (!input.files.length) {
+                        alert("IFC 파일을 먼저 선택하세요.");
+                        return;
+                    }
+                    await loadIfcToViewer(input.files[0]);
+                };
+
+            async function loadIfcToViewer(file) {
+                // 1. pyodide로 IFC 파싱
+                if (renderer) {
+                    renderer.dispose();
+                    renderer = null;
+                }
+                document.getElementById("viewer-container").innerHTML =
+                    "<canvas id='three-canvas'></canvas>";
+                document.getElementById("info-box").style.display = "none";
+                lastSelected = null;
+
+                const ifcContent = await file.text();
+                const ifcopenshell = pyodide.pyimport("ifcopenshell");
+                const ifcopenshell_util = pyodide.pyimport(
+                    "ifcopenshell.util.element"
+                );
+                ifc = ifcopenshell.file.from_string(ifcContent);
+                pyodide.globals.set("ifc", ifc); // ⬅️ 이 줄 추가!
+
+                const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
+                const s = ifcopenshell_geom.settings();
+                s.set(s.WELD_VERTICES, false);
+                const it = ifcopenshell_geom.iterator(s, ifc);
+
+                // 2. Three.js 3D Viewer
+                const container = document.getElementById("viewer-container");
+                const width = container.clientWidth || 640,
+                    height = 480;
+                renderer = new THREE.WebGLRenderer({
+                    antialias: true,
+                    canvas: document.getElementById("three-canvas"),
+                });
+                renderer.setSize(width, height);
+                renderer.setClearColor(0xffffff, 1);
+
+                scene = new THREE.Scene();
+                scene.add(new THREE.AmbientLight(0xcccccc));
+                const light = new THREE.DirectionalLight(0xffffff, 1);
+                light.position.set(10, 20, 30);
+                scene.add(light);
+
+                camera = new THREE.PerspectiveCamera(
+                    45,
+                    width / height,
+                    1,
+                    10000
+                );
+                controls = new OrbitControls(camera, renderer.domElement);
+
+                // 3. IFC → Mesh로 변환 및 씬에 추가
+                let last_mesh_id = null,
+                    geometries;
+                if (it.initialize()) {
+                    while (true) {
+                        const obj = it.get();
+                        const ty = ifc.by_id(obj.id).is_a();
+                        if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
+                            if (last_mesh_id != obj.geometry.id) {
+                                geometries = [];
+                                const materials = obj.geometry.materials
+                                    .toJs()
+                                    .map(
+                                        (e) =>
+                                            new THREE.MeshLambertMaterial({
+                                                color: new THREE.Color(
+                                                    ...e.diffuse.toJs()
+                                                ),
+                                                opacity: 1.0 - e.transparency,
+                                                transparent:
+                                                    e.transparency > 1e-5,
+                                                side: THREE.DoubleSide,
+                                            })
+                                    );
+                                const mapping = {};
+                                obj.geometry.material_ids
+                                    .toJs()
+                                    .forEach((i, idx) => {
+                                        if (!mapping[i]) mapping[i] = [];
+                                        mapping[i].push(idx);
+                                    });
+                                const vs = new Float32Array(
+                                    obj.geometry.verts.toJs()
+                                );
+                                const ns = new Float32Array(
+                                    obj.geometry.normals.toJs()
+                                );
+                                const fs = obj.geometry.faces.toJs();
+                                const offset = mapping[-1] ? 1 : 0;
+                                if (offset) {
+                                    materials.unshift(
+                                        new THREE.MeshLambertMaterial({
+                                            color: new THREE.Color(
+                                                0.6,
+                                                0.6,
+                                                0.6
+                                            ),
+                                            side: THREE.DoubleSide,
+                                        })
+                                    );
+                                }
+                                materials.forEach((m, mi) => {
+                                    const geometry = new THREE.BufferGeometry();
+                                    geometry.setIndex(
+                                        mapping[mi - offset].flatMap((i) => [
+                                            fs[3 * i + 0],
+                                            fs[3 * i + 1],
+                                            fs[3 * i + 2],
+                                        ])
+                                    );
+                                    geometry.setAttribute(
+                                        "position",
+                                        new THREE.Float32BufferAttribute(vs, 3)
+                                    );
+                                    geometry.setAttribute(
+                                        "normal",
+                                        new THREE.Float32BufferAttribute(ns, 3)
+                                    );
+                                    geometries.push([geometry, m]);
+                                });
+                                last_mesh_id = obj.geometry.id;
+                            }
+                            for (const [g, mat] of geometries) {
+                                const mesh = new THREE.Mesh(g, mat);
+                                const m = obj.transformation.matrix.data.toJs();
+                                const matrix = new THREE.Matrix4()
+                                    .set(
+                                        m[0],
+                                        m[1],
+                                        m[2],
+                                        0,
+                                        m[3],
+                                        m[4],
+                                        m[5],
+                                        0,
+                                        m[6],
+                                        m[7],
+                                        m[8],
+                                        0,
+                                        m[9],
+                                        m[10],
+                                        m[11],
+                                        1
+                                    )
+                                    .transpose();
+                                const zUpToYUp =
+                                    new THREE.Matrix4().makeRotationX(
+                                        -Math.PI / 2
+                                    );
+                                matrix.premultiply(zUpToYUp);
+                                mesh.matrixAutoUpdate = false;
+                                mesh.matrix = matrix;
+                                mesh.userData.ifcId = obj.id;
+                                scene.add(mesh);
+                            }
+                        }
+                        if (!it.next()) break;
+                    }
+                }
+
+                // 카메라 오토포커스
+                const boundingBox = new THREE.Box3().setFromObject(scene);
+                const center = boundingBox.getCenter(new THREE.Vector3());
+                const viewDistance = boundingBox
+                    .getSize(new THREE.Vector3())
+                    .length();
+                controls.target.copy(center);
+                camera.position.copy(
+                    center
+                        .clone()
+                        .add(
+                            new THREE.Vector3(0.5, 0.25, 1)
+                                .normalize()
+                                .multiplyScalar(viewDistance)
+                        )
+                );
+                camera.near = viewDistance / 100;
+                camera.far = viewDistance * 100;
+                camera.updateProjectionMatrix();
+                controls.update();
+
+                // 클릭시 속성 추출
+                const raycaster = new THREE.Raycaster();
+                const mouse = new THREE.Vector2();
+                renderer.domElement.addEventListener("click", (event) => {
+                    const canvasBounds =
+                        renderer.domElement.getBoundingClientRect();
+                    mouse.x =
+                        ((event.clientX - canvasBounds.left) /
+                            canvasBounds.width) *
+                            2 -
+                        1;
+                    mouse.y =
+                        -(
+                            (event.clientY - canvasBounds.top) /
+                            canvasBounds.height
+                        ) *
+                            2 +
+                        1;
+                    raycaster.setFromCamera(mouse, camera);
+                    const intersects = raycaster.intersectObjects(
+                        scene.children,
+                        true
+                    );
+                    if (
+                        intersects.length > 0 &&
+                        intersects[0].distance < 100000
+                    ) {
+                        const selected = intersects[0].object;
+                        if (lastSelected !== selected) {
+                            if (
+                                lastSelected?.material &&
+                                !Array.isArray(lastSelected.material)
+                            ) {
+                                lastSelected.material.emissive?.set(0x000000);
+                            }
+                            lastSelected = selected;
+                            selected.material.emissive?.set(0xff0000);
+                            try {
+                                const entity = ifc.by_id(
+                                    selected.userData.ifcId
+                                );
+                                const name = entity.Name || "(no name)";
+                                document.getElementById(
+                                    "selected-name"
+                                ).textContent = name;
+                                let attributesText = "";
+                                const psets = ifcopenshell_util
+                                    .get_psets(entity)
+                                    .toJs();
+                                for (const [setName, props] of Object.entries(
+                                    psets
+                                )) {
+                                    attributesText += `[${setName}]\n`;
+                                    for (const [key, value] of Object.entries(
+                                        props
+                                    )) {
+                                        attributesText += `  ${key}: ${value}\n`;
+                                    }
+                                    attributesText += `\n`;
+                                }
+                                document.getElementById(
+                                    "selected-attributes"
+                                ).textContent =
+                                    attributesText ||
+                                    "(No Psets or Quantities)";
+                                document.getElementById(
+                                    "info-box"
+                                ).style.display = "block";
+                            } catch (e) {
+                                document.getElementById(
+                                    "selected-attributes"
+                                ).textContent = "(Error loading attributes)";
+                                document.getElementById(
+                                    "info-box"
+                                ).style.display = "block";
+                            }
+                        }
+                    } else {
+                        if (
+                            lastSelected?.material &&
+                            !Array.isArray(lastSelected.material)
+                        ) {
+                            lastSelected.material.emissive?.set(0x000000);
+                        }
+                        lastSelected = null;
+                        document.getElementById("selected-name").textContent =
+                            "None";
+                        document.getElementById(
+                            "selected-attributes"
+                        ).textContent = "";
+                        document.getElementById("info-box").style.display =
+                            "none";
+                    }
+                });
+
+                // 렌더 루프
+                function render() {
+                    requestAnimationFrame(render);
+                    renderer.render(scene, camera);
+                }
+                render();
+
+                // 창 크기 변경시 대응
+                window.addEventListener("resize", () => {
+                    const container =
+                        document.getElementById("viewer-container");
+                    const width = container.clientWidth || 640,
+                        height = 480;
+                    renderer.setSize(width, height);
+                    camera.aspect = width / height;
+                    camera.updateProjectionMatrix();
+                });
+
+                // === 벽/바닥/실 정보 추출, 윈도우 변수 할당 및 표/예측에 사용 ===
+                try {
+                    // 벽면적 (GrossSideArea 합)
+                    const wallArea = pyodide.runPython(
+                        `
+import ifcopenshell.util.element as util
+wall_area = 0
+for x in ifc.by_type("IfcWall"):
+    q = util.get_psets(x).get("Qto_WallBaseQuantities",{})
+    wall_area += q.get("GrossSideArea",0) or 0
+wall_area
+    `,
+                        { ifc }
+                    );
+                    // 바닥면적 (GrossArea 합)
+                    const floorArea = pyodide.runPython(
+                        `
+import ifcopenshell.util.element as util
+floor_area = 0
+for x in ifc.by_type("IfcSlab"):
+    q = util.get_psets(x).get("Qto_SlabBaseQuantities",{})
+    floor_area += q.get("GrossArea",0) or 0
+floor_area
+    `,
+                        { ifc }
+                    );
+                    // 실개수
+                    const roomCount = pyodide.runPython(
+                        `len(ifc.by_type("IfcSpace"))`,
+                        { ifc }
+                    );
+
+                    // → 윈도우 글로벌 변수에 저장!
+                    window.bimWallArea = Number(wallArea) || 0;
+                    window.bimFloorArea = Number(floorArea) || 0;
+                    window.bimRoomCount = Number(roomCount) || 0;
+
+                    // 표에도 반영
+                    document.getElementById("wallArea").innerText =
+                        window.bimWallArea.toLocaleString();
+                    document.getElementById("floorArea").innerText =
+                        window.bimFloorArea.toLocaleString();
+                    document.getElementById("roomCount").innerText =
+                        window.bimRoomCount.toLocaleString();
+                } catch (e) {
+                    window.bimWallArea = 0;
+                    window.bimFloorArea = 0;
+                    window.bimRoomCount = 0;
+                    document.getElementById("wallArea").innerText = "-";
+                    document.getElementById("floorArea").innerText = "-";
+                    document.getElementById("roomCount").innerText = "-";
+                }
+            }
+        </script>
+    </body>
+</html>
