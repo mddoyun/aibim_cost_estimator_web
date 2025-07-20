@@ -1,0 +1,158 @@
+<!--templates/dd_by_ifc/project_list.html-->
+
+{% load static %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>상세견적 프로젝트 목록 - AIBIM CostEstimator</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css'%}" />
+  </head>
+  <body class="is-preload">
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <!-- Logo -->
+        <h1>
+          <a href="/" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li><a href="/">홈</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li class="current">
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+
+      <div id="nav_sub">
+        <h6 class="text-center">
+          <b>AI+BIM 상세견적</b> <span>- IFC기반 프로젝트 목록</span>
+        </h6>
+      </div>
+    </div>
+
+    <div class="container mt-5">
+      <h2 class="text-center mb-4">상세견적 프로젝트 목록</h2>
+
+      <div class="text-center mb-4">
+        <a href="{% url 'dd_by_ifc:upload_project' %}" class="btn btn-primary">
+          새 프로젝트 업로드
+        </a>
+      </div>
+
+      {% if error_message %}
+      <div class="alert alert-danger">{{ error_message }}</div>
+      {% endif %} {% if projects %}
+      <div class="row">
+        {% for project in projects %}
+        <div class="col-md-4 mb-4">
+          <div class="card">
+            <div class="card-header bg-danger text-white">
+              <h5 class="mb-0">{{ project.name }}</h5>
+            </div>
+            <div class="card-body">
+              <p class="text-muted">
+                생성일: {{ project.created_at|date:"Y-m-d H:i" }}
+              </p>
+
+              {% if project.use %}
+              <p><strong>용도:</strong> {{ project.use }}</p>
+              {% endif %}
+
+              <p><strong>객체 수:</strong> {{ project.objects_count }}개</p>
+
+              <p>
+                <strong>총 견적액:</strong> {{
+                project.total_amount|floatformat:0 }}원
+              </p>
+
+              {% if project.is_processed %}
+              <span class="badge badge-success">처리 완료</span>
+              {% elif project.processing_error %}
+              <span class="badge badge-danger">처리 오류</span>
+              <div class="mt-2">
+                <small class="text-danger"
+                  >{{ project.processing_error }}</small
+                >
+              </div>
+              {% else %}
+              <span class="badge badge-warning">처리 중</span>
+              {% endif %}
+
+              <div class="mt-3">
+                {% if project.is_processed %}
+                <a
+                  href="{% url 'dd_by_ifc:project_detail' project.id %}"
+                  class="btn btn-success btn-sm"
+                >
+                  상세견적 작업
+                </a>
+                {% else %}
+                <button class="btn btn-secondary btn-sm" disabled>
+                  처리 중...
+                </button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="alert alert-info text-center">
+        <h4>업로드된 프로젝트가 없습니다</h4>
+        <p>IFC 파일을 업로드하여 상세견적을 시작해보세요.</p>
+        <a href="{% url 'dd_by_ifc:upload_project' %}" class="btn btn-primary">
+          첫 번째 프로젝트 업로드하기
+        </a>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Scripts -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
+  </body>
+</html>

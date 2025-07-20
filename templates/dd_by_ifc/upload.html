@@ -1,0 +1,230 @@
+<!--templates/dd_by_ifc/upload.html-->
+
+{% load static %}
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>상세견적 프로젝트 업로드 - AIBIM CostEstimator</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+      integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="{% static 'css/main.css'%}" />
+    <link rel="stylesheet" href="{% static 'css/style_dd_by_ifc.css'%}" />
+  </head>
+
+  <body class="is-preload">
+    <div id="page-wrapper">
+      <!-- Header -->
+      <div id="header">
+        <!-- Logo -->
+        <h1>
+          <a href="/" id="logo">AIBIM <em>Cost Estimator</em></a>
+        </h1>
+
+        <!-- Nav -->
+        <nav id="nav">
+          <ul>
+            <li><a href="/">홈</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li class="current">
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+      <div id="nav_sub">
+        <h6 class="text-center">
+          <b>AI+BIM 상세견적</b>
+          <span>- 새 프로젝트 업로드</span>
+        </h6>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="row justify-content-center">
+        <div class="col-md-8">
+          <div class="card">
+            <div class="card-header bg-danger text-white">
+              <h5 class="mb-0">새 상세견적 프로젝트 등록</h5>
+            </div>
+            <div class="card-body">
+              <!-- 메시지 표시 -->
+              {% if messages %} {% for message in messages %}
+              <div
+                class="alert alert-{{ message.tags }} alert-dismissible fade show"
+              >
+                {{ message }}
+                <button type="button" class="close" data-dismiss="alert">
+                  <span>&times;</span>
+                </button>
+              </div>
+              {% endfor %} {% endif %}
+
+              <form method="post" enctype="multipart/form-data" id="uploadForm">
+                {% csrf_token %}
+
+                <div class="form-group">
+                  <label for="projectName">프로젝트명 *</label>
+                  <input
+                    type="text"
+                    name="name"
+                    id="projectName"
+                    class="form-control"
+                    placeholder="프로젝트 이름을 입력하세요"
+                    required
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="projectUse">용도</label>
+                  <input
+                    type="text"
+                    name="use"
+                    id="projectUse"
+                    class="form-control"
+                    placeholder="건물 용도를 입력하세요 (예: 사무용 건물, 아파트 등)"
+                  />
+                </div>
+
+                <div class="form-group">
+                  <label for="ifcFile">IFC 파일 업로드 *</label>
+                  <input
+                    type="file"
+                    name="ifc_file"
+                    id="ifcFile"
+                    class="form-control"
+                    accept=".ifc"
+                    required
+                  />
+                  <small class="form-text text-muted">
+                    IFC 파일을 업로드하면 자동으로 3D 모델로 변환되고 객체
+                    정보가 추출됩니다.
+                  </small>
+                </div>
+
+                <button
+                  type="submit"
+                  class="btn btn-danger btn-lg btn-block"
+                  id="submitBtn"
+                >
+                  업로드 및 변환 시작
+                </button>
+              </form>
+
+              <div class="mt-4">
+                <h6>상세견적 시스템 특징:</h6>
+                <ul class="small">
+                  <li>
+                    <strong>3D 모델 뷰어:</strong> 업로드된 IFC 파일을 실시간
+                    3D로 확인
+                  </li>
+                  <li>
+                    <strong>객체별 공사코드 매핑:</strong> 각 BIM 객체에
+                    공사코드를 직접 할당
+                  </li>
+                  <li>
+                    <strong>동적 그룹핑:</strong> 다양한 기준으로 객체를
+                    그룹화하여 관리
+                  </li>
+                  <li>
+                    <strong>실시간 견적 계산:</strong> 공사코드 추가 시 즉시
+                    견적 계산
+                  </li>
+                  <li>
+                    <strong>수정된 IFC 다운로드:</strong> 공사코드가 반영된 IFC
+                    파일 다운로드
+                  </li>
+                </ul>
+              </div>
+
+              <div class="text-center mt-3">
+                <a
+                  href="{% url 'dd_by_ifc:project_list' %}"
+                  class="btn btn-secondary"
+                >
+                  프로젝트 목록으로 돌아가기
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
+
+    <script>
+      $(document).ready(function () {
+        // 파일 선택 시 파일명 표시
+        $("#ifcFile").change(function () {
+          const file = this.files[0];
+          if (file) {
+            const fileSize = (file.size / 1024 / 1024).toFixed(2);
+            $(this)
+              .next(".form-text")
+              .html(
+                `선택된 파일: <strong>${file.name}</strong> (${fileSize} MB)<br>` +
+                  "IFC 파일을 업로드하면 자동으로 3D 모델로 변환되고 객체 정보가 추출됩니다."
+              );
+          }
+        });
+
+        // 폼 제출 시 로딩 상태 표시
+        $("#uploadForm").submit(function () {
+          const submitBtn = $("#submitBtn");
+          submitBtn.prop("disabled", true);
+          submitBtn.html(`
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+            처리 중... 잠시만 기다려주세요
+          `);
+
+          // 120초 후 알림 (대용량 파일 처리 시간 고려)
+          setTimeout(function () {
+            if (submitBtn.prop("disabled")) {
+              alert(
+                "처리 시간이 오래 걸리고 있습니다. 페이지를 새로고침하여 결과를 확인해주세요."
+              );
+            }
+          }, 120000);
+        });
+      });
+    </script>
+  </body>
+</html>
