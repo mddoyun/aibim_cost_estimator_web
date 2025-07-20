@@ -1,4 +1,5 @@
-# ifc_ai_prediction/admin.py (오류 수정 버전)
+# ifc_ai_prediction/admin.py
+
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse

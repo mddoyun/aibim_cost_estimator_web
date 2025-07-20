@@ -1,3 +1,5 @@
+#config/settings.py
+
 """
 Django settings for config project.
 
@@ -38,9 +40,6 @@ INSTALLED_APPS = [
     "ai_prediction",
     "dd_by_ifc",
     "ai_learning",
-    "sd_by_input",
-    "est_dd",
-    "blog",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

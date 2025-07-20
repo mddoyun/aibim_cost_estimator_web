@@ -1,4 +1,5 @@
-# ifc_ai_prediction/models.py (완전 통합 버전)
+# ifc_ai_prediction/models.py
+
 from django.db import models
 import json
 

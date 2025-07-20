@@ -1,3 +1,5 @@
+#ai_learning/apps.py
+
 from django.apps import AppConfig
 
 

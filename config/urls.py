@@ -1,11 +1,10 @@
+#config/urls.py
+
 from django.contrib import admin
 from django.urls import path, include
 from config.views import index # view의 index 함수를 가져옵니다.
-from blog.views import post_list # blog 앱의 post_list 뷰를 가져옵니다.
-from est_dd.views import upload_ifc # est_dd 앱의 upload_ifc 뷰를 가져옵니다.
 from django.conf import settings
 from django.conf.urls.static import static
-from sd_by_input.views import go_sd_by_input, go_sd_by_input_result # sd_by_input 앱의 go_sd_by_input 뷰를 가져옵니다.
 from ai_learning.views import go_ai_learning # ai_learning 앱의 go_ai_learning 뷰를 가져옵니다.
 from dd_by_ifc.views import (
     go_dd_by_ifc, 
@@ -24,10 +23,6 @@ from dd_by_ifc.views import (
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("",index),
-    path("posts/", post_list),
-    path("upload/",upload_ifc, name='upload_ifc'),
-    path("sd_by_input/", go_sd_by_input),  # sd_by_input 앱의 URL을 포함합니다.
-    path("sd_by_input_result/<int:inputValuesId>", go_sd_by_input_result ),  # sd_by_input_result 뷰를 추가합니다.
     path("ai_learning/", go_ai_learning),  # ai_learning 앱의 URL을 포함합니다.
     path("dd_by_ifc/", go_dd_by_ifc),  # dd_by_ifc 앱의 URL을 포함합니다.
     path("dd_by_ifc_result/<int:project_id>/", go_dd_by_ifc_result, name='go_dd_by_ifc_result'),

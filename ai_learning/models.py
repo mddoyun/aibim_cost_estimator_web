@@ -1,3 +1,4 @@
+#ai_learning/models.py
 from django.db import models
 
 class LearningProject(models.Model):

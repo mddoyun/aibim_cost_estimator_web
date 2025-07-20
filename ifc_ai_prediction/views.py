@@ -1,4 +1,5 @@
-# ifc_ai_prediction/views.py (완전 통합 버전)
+# ifc_ai_prediction/views.py
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt

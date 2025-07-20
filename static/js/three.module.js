@@ -1,3 +1,5 @@
+// static/js/three.module.js
+
 /**
  * @license
  * Copyright 2010-2023 Three.js Authors

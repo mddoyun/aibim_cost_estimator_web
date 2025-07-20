@@ -1,3 +1,5 @@
+// static/js/OrbitControls.js
+
 import {
   EventDispatcher,
   MOUSE,

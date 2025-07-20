@@ -1,4 +1,5 @@
 # dd_by_ifc/views.py
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt

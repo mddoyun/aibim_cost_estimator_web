@@ -1,4 +1,5 @@
 # ifc_ai_prediction/apps.py
+
 from django.apps import AppConfig
 
 class IFCAIPredictionConfig(AppConfig):

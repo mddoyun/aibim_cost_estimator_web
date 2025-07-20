@@ -1,3 +1,5 @@
+#ai_prediction/apps.py
+
 from django.apps import AppConfig
 
 

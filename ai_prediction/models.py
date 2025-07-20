@@ -1,3 +1,5 @@
+#ai_prediction/models.py
+
 from django.db import models
 import json
 

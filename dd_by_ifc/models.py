@@ -1,4 +1,5 @@
 # dd_by_ifc/models.py
+
 from django.db import models
 import json
 

@@ -1,3 +1,5 @@
+// static/js/OBJLoader.js
+
 import {
   BufferGeometry,
   FileLoader,

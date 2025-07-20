@@ -1,4 +1,5 @@
-# ifc_ai_prediction/urls.py (디버깅 버전)
+# ifc_ai_prediction/urls.py
+
 from django.urls import path
 from . import views
 
