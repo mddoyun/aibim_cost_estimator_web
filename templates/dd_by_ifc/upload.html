@@ -23,6 +23,7 @@
   <body class="is-preload">
     <div id="page-wrapper">
       <!-- Header -->
+      <!-- Header -->
       <div id="header">
         <!-- Logo -->
         <h1>
@@ -63,10 +64,10 @@
           </ul>
         </nav>
       </div>
+
       <div id="nav_sub">
         <h6 class="text-center">
-          <b>AI+BIM 상세견적</b>
-          <span>- 새 프로젝트 업로드</span>
+          <b>AI+BIM 상세견적</b> <span>(IFC기반)</span>
         </h6>
       </div>
     </div>
@@ -79,18 +80,6 @@
               <h5 class="mb-0">새 상세견적 프로젝트 등록</h5>
             </div>
             <div class="card-body">
-              <!-- 메시지 표시 -->
-              {% if messages %} {% for message in messages %}
-              <div
-                class="alert alert-{{ message.tags }} alert-dismissible fade show"
-              >
-                {{ message }}
-                <button type="button" class="close" data-dismiss="alert">
-                  <span>&times;</span>
-                </button>
-              </div>
-              {% endfor %} {% endif %}
-
               <form method="post" enctype="multipart/form-data" id="uploadForm">
                 {% csrf_token %}
 
@@ -141,32 +130,6 @@
                   업로드 및 변환 시작
                 </button>
               </form>
-
-              <div class="mt-4">
-                <h6>상세견적 시스템 특징:</h6>
-                <ul class="small">
-                  <li>
-                    <strong>3D 모델 뷰어:</strong> 업로드된 IFC 파일을 실시간
-                    3D로 확인
-                  </li>
-                  <li>
-                    <strong>객체별 공사코드 매핑:</strong> 각 BIM 객체에
-                    공사코드를 직접 할당
-                  </li>
-                  <li>
-                    <strong>동적 그룹핑:</strong> 다양한 기준으로 객체를
-                    그룹화하여 관리
-                  </li>
-                  <li>
-                    <strong>실시간 견적 계산:</strong> 공사코드 추가 시 즉시
-                    견적 계산
-                  </li>
-                  <li>
-                    <strong>수정된 IFC 다운로드:</strong> 공사코드가 반영된 IFC
-                    파일 다운로드
-                  </li>
-                </ul>
-              </div>
 
               <div class="text-center mt-3">
                 <a

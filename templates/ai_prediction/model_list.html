@@ -20,121 +20,151 @@
     <div id="page-wrapper">
       <!-- Header -->
       <div id="header">
+        <!-- Logo -->
         <h1>
           <a href="/" id="logo">AIBIM <em>Cost Estimator</em></a>
         </h1>
+
+        <!-- Nav -->
         <nav id="nav">
           <ul>
             <li><a href="/">홈</a></li>
-            <li><a href="/ai_learning">AI모델 학습</a></li>
+            <li>
+              <a href="#">계획설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ai_prediction/">AI 개산견적</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="#">중간설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/ifc_ai_prediction/">AI+BIM 개산견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
             <li class="current">
-              <a href="/ai_prediction/models">AI모델 예측</a>
+              <a href="#">실시설계단계 견적</a>
+              <ul>
+                <li>
+                  <a href="/dd_by_ifc/">AI+BIM 상세견적(IFC기반)</a>
+                </li>
+              </ul>
+            </li>
+            <li>
+              <a href="/ai_learning">AI모델 학습</a>
             </li>
           </ul>
         </nav>
       </div>
 
-      <!-- Main Content -->
-      <div class="container mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-          <h2>AI 모델 목록</h2>
+      <div id="nav_sub">
+        <h6 class="text-center">
+          <b>AI+BIM 상세견적</b> <span>(IFC기반)</span>
+        </h6>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container mt-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>AI 모델 목록</h2>
+        <a href="{% url 'ai_prediction:model_upload' %}" class="btn btn-primary"
+          >새 모델 업로드</a
+        >
+      </div>
+
+      {% if models %}
+      <div class="row">
+        {% for model in models %}
+        <div class="col-md-6 col-lg-4 mb-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <h5 class="card-title">{{ model.name }}</h5>
+              <p class="card-text text-muted">
+                {{ model.description|truncatewords:15 }}
+              </p>
+
+              <div class="small mb-2">
+                <div class="mb-1">
+                  <strong>입력:</strong> {{ model.input_columns|join:", " }}
+                </div>
+                <div class="mb-1">
+                  <strong>출력:</strong> {{ model.output_columns|join:", " }}
+                </div>
+                <div class="text-muted">
+                  생성일: {{ model.created_at|date:"Y-m-d H:i" }}
+                </div>
+              </div>
+
+              {% if model.rmse %}
+              <div class="small mb-2">
+                <div class="badge bg-secondary">
+                  RMSE: {{ model.rmse|floatformat:4 }}
+                </div>
+                <div class="badge bg-secondary">
+                  MAE: {{ model.mae|floatformat:4 }}
+                </div>
+                <div class="badge bg-secondary">
+                  R²: {{ model.r2_score|floatformat:4 }}
+                </div>
+              </div>
+              {% endif %}
+            </div>
+            <div class="card-footer">
+              <a
+                href="{% url 'ai_prediction:prediction_page' model.id %}"
+                class="btn btn-success btn-sm"
+                >예측하기</a
+              >
+              <button
+                class="btn btn-outline-danger btn-sm"
+                onclick="deleteModel({{ model.id }})"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-center py-5">
+        <div class="mb-3">
+          <svg
+            width="64"
+            height="64"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="text-muted"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        </div>
+        <h5 class="text-muted">업로드된 AI 모델이 없습니다</h5>
+        <p class="text-muted">
+          먼저 AI 모델을 학습하거나 기존 모델을 업로드하세요.
+        </p>
+        <div class="mt-3">
+          <a href="/ai_learning" class="btn btn-outline-primary me-2"
+            >AI 모델 학습하기</a
+          >
           <a
             href="{% url 'ai_prediction:model_upload' %}"
             class="btn btn-primary"
-            >새 모델 업로드</a
+            >모델 업로드</a
           >
         </div>
-
-        {% if models %}
-        <div class="row">
-          {% for model in models %}
-          <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100">
-              <div class="card-body">
-                <h5 class="card-title">{{ model.name }}</h5>
-                <p class="card-text text-muted">
-                  {{ model.description|truncatewords:15 }}
-                </p>
-
-                <div class="small mb-2">
-                  <div class="mb-1">
-                    <strong>입력:</strong> {{ model.input_columns|join:", " }}
-                  </div>
-                  <div class="mb-1">
-                    <strong>출력:</strong> {{ model.output_columns|join:", " }}
-                  </div>
-                  <div class="text-muted">
-                    생성일: {{ model.created_at|date:"Y-m-d H:i" }}
-                  </div>
-                </div>
-
-                {% if model.rmse %}
-                <div class="small mb-2">
-                  <div class="badge bg-secondary">
-                    RMSE: {{ model.rmse|floatformat:4 }}
-                  </div>
-                  <div class="badge bg-secondary">
-                    MAE: {{ model.mae|floatformat:4 }}
-                  </div>
-                  <div class="badge bg-secondary">
-                    R²: {{ model.r2_score|floatformat:4 }}
-                  </div>
-                </div>
-                {% endif %}
-              </div>
-              <div class="card-footer">
-                <a
-                  href="{% url 'ai_prediction:prediction_page' model.id %}"
-                  class="btn btn-success btn-sm"
-                  >예측하기</a
-                >
-                <button
-                  class="btn btn-outline-danger btn-sm"
-                  onclick="deleteModel({{ model.id }})"
-                >
-                  삭제
-                </button>
-              </div>
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="text-center py-5">
-          <div class="mb-3">
-            <svg
-              width="64"
-              height="64"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="text-muted"
-            >
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <path d="M21 15l-5-5L5 21" />
-            </svg>
-          </div>
-          <h5 class="text-muted">업로드된 AI 모델이 없습니다</h5>
-          <p class="text-muted">
-            먼저 AI 모델을 학습하거나 기존 모델을 업로드하세요.
-          </p>
-          <div class="mt-3">
-            <a href="/ai_learning" class="btn btn-outline-primary me-2"
-              >AI 모델 학습하기</a
-            >
-            <a
-              href="{% url 'ai_prediction:model_upload' %}"
-              class="btn btn-primary"
-              >모델 업로드</a
-            >
-          </div>
-        </div>
-        {% endif %}
       </div>
+      {% endif %}
     </div>
 
     <!-- Delete Confirmation Modal -->
@@ -208,5 +238,12 @@
           }
         });
     </script>
+    <!-- Scripts -->
+    <script src="{% static 'js/jquery.min.js'%}"></script>
+    <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
+    <script src="{% static 'js/browser.min.js'%}"></script>
+    <script src="{% static 'js/breakpoints.min.js'%}"></script>
+    <script src="{% static 'js/util.js'%}"></script>
+    <script src="{% static 'js/main.js'%}"></script>
   </body>
 </html>

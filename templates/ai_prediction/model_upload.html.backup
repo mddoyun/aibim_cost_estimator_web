@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="{% static 'css/main.css'%}" />
   </head>
   <body class="is-preload">
+    <!-- 네비게이션 헤더 -->
     <div id="page-wrapper">
       <!-- Header -->
       <div id="header">
@@ -61,101 +62,9 @@
       </div>
 
       <div id="nav_sub">
-        <h6 class="text-center"><b>AI 개산견적</b> <span></span></h6>
-      </div>
-    </div>
-
-    <!-- Main Content -->
-    <div class="container mt-4">
-      <div class="row">
-        <div class="col-md-6">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">AI 모델 업로드</h5>
-            </div>
-            <div class="card-body">
-              <form id="uploadForm" enctype="multipart/form-data">
-                {% csrf_token %}
-                <div class="mb-3">
-                  <label for="modelName" class="form-label">모델 이름</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="modelName"
-                    name="name"
-                    required
-                  />
-                </div>
-                <div class="mb-3">
-                  <label for="modelDescription" class="form-label"
-                    >모델 설명</label
-                  >
-                  <textarea
-                    class="form-control"
-                    id="modelDescription"
-                    name="description"
-                    rows="3"
-                  ></textarea>
-                </div>
-                <div class="mb-3">
-                  <label for="modelFile" class="form-label"
-                    >모델 파일 (.zip)</label
-                  >
-                  <input
-                    type="file"
-                    class="form-control"
-                    id="modelFile"
-                    name="model_file"
-                    accept=".zip"
-                    required
-                  />
-                  <div class="form-text">
-                    학습된 AI 모델의 ZIP 파일을 업로드하세요.
-                  </div>
-                </div>
-                <button type="submit" class="btn btn-sm btn-success">
-                  업로드
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">업로드된 모델 목록</h5>
-            </div>
-            <div class="card-body">
-              {% if models %}
-              <div class="list-group">
-                {% for model in models %}
-                <div class="list-group-item">
-                  <div class="d-flex w-100 justify-content-between">
-                    <h6 class="mb-1">{{ model.name }}</h6>
-                    <small>{{ model.created_at|date:"Y-m-d H:i" }}</small>
-                  </div>
-                  <p class="mb-1">{{ model.description|truncatewords:20 }}</p>
-                  <small>
-                    입력: {{ model.input_columns|join:", " }}<br />
-                    출력: {{ model.output_columns|join:", " }}
-                  </small>
-                  <div class="mt-2">
-                    <a
-                      href="{% url 'ai_prediction:prediction_page' model.id %}"
-                      class="btn btn-sm btn-success"
-                      >예측하기</a
-                    >
-                  </div>
-                </div>
-                {% endfor %}
-              </div>
-              {% else %}
-              <p class="text-muted">업로드된 모델이 없습니다.</p>
-              {% endif %}
-            </div>
-          </div>
-        </div>
+        <h6 class="text-center">
+          <b>AI+BIM 개산견적</b> <span>(IFC기반)</span>
+        </h6>
       </div>
     </div>
 

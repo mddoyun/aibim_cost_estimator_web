@@ -25,14 +25,14 @@
       <div id="header">
         <!-- Logo -->
         <h1>
-          <a href="/" id="logo">AIBIM <em>Cost Estimator</em></a>
+          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
         </h1>
 
         <!-- Nav -->
         <nav id="nav">
           <ul>
-            <li><a href="/">홈</a></li>
-            <li class="current">
+            <li class="current"><a href="">홈</a></li>
+            <li>
               <a href="#">계획설계단계 견적</a>
               <ul>
                 <li>
@@ -63,129 +63,126 @@
         </nav>
       </div>
 
-      <div id="nav_sub">
-        <h6 class="text-center"><b>AI 개산견적</b> <span></span></h6>
-      </div>
-    </div>
+      <!-- Main Content -->
+      <div class="container mt-4">
+        <div class="row">
+          <div class="col-md-8">
+            <div class="card">
+              <div class="card-header">
+                <h5 class="mb-0">{{ ai_model.name }} - 예측</h5>
+                <small class="text-muted">{{ ai_model.description }}</small>
+              </div>
+              <div class="card-body">
+                <!-- 모델 로딩 상태 -->
+                <div id="modelLoadingStatus" class="text-center mb-3">
+                  <div class="spinner-border text-primary" role="status"></div>
+                  <div class="mt-2">AI 모델을 로드하는 중...</div>
+                </div>
 
-    <!-- Main Content -->
-    <div class="container mt-4">
-      <div class="row">
-        <div class="col-md-8">
-          <div class="card">
-            <div class="card-header">
-              <h5 class="mb-0">{{ ai_model.name }} - 예측</h5>
-              <small class="text-muted">{{ ai_model.description }}</small>
+                <!-- 입력 폼 -->
+                <div id="inputForm" style="display: none">
+                  <h6>입력 데이터</h6>
+                  <form id="predictionForm">
+                    <div id="inputFields"></div>
+                    <button type="submit" class="btn btn-primary mt-3">
+                      예측 실행
+                    </button>
+                  </form>
+                </div>
+
+                <!-- 예측 결과 -->
+                <!-- 기존 예측 결과 섹션을 다음과 같이 수정하세요 -->
+                <!-- 기존 코드 -->
+                <div id="predictionResult" style="display: none">
+                  <hr />
+                  <h6>예측 결과</h6>
+                  <div id="resultContent"></div>
+                  <div
+                    id="resultChart"
+                    style="height: 300px; margin-top: 20px"
+                  ></div>
+
+                  <!-- 이 부분 추가 -->
+                  <div class="text-center mt-3">
+                    <button
+                      type="button"
+                      class="btn btn-danger"
+                      id="downloadPdfBtn"
+                      onclick="downloadPDF()"
+                    >
+                      📄 PDF 보고서 다운로드
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="card-body">
-              <!-- 모델 로딩 상태 -->
-              <div id="modelLoadingStatus" class="text-center mb-3">
-                <div class="spinner-border text-primary" role="status"></div>
-                <div class="mt-2">AI 모델을 로드하는 중...</div>
+          </div>
+
+          <div class="col-md-4">
+            <!-- 모델 정보 -->
+            <div class="card mb-3">
+              <div class="card-header">
+                <h6 class="mb-0">모델 정보</h6>
               </div>
-
-              <!-- 입력 폼 -->
-              <div id="inputForm" style="display: none">
-                <h6>입력 데이터</h6>
-                <form id="predictionForm">
-                  <div id="inputFields"></div>
-                  <button type="submit" class="btn btn-sm btn-success mt-3">
-                    예측 실행
-                  </button>
-                </form>
-              </div>
-
-              <!-- 예측 결과 -->
-              <!-- 기존 예측 결과 섹션을 다음과 같이 수정하세요 -->
-              <!-- 기존 코드 -->
-              <div id="predictionResult" style="display: none">
-                <hr />
-                <h6>예측 결과</h6>
-                <div id="resultContent"></div>
-                <div
-                  id="resultChart"
-                  style="height: 300px; margin-top: 20px"
-                ></div>
-
-                <!-- 이 부분 추가 -->
-                <div class="text-center mt-3">
-                  <button
-                    type="button"
-                    class="btn btn-danger"
-                    id="downloadPdfBtn"
-                    onclick="downloadPDF()"
+              <div class="card-body">
+                <div class="mb-2">
+                  <strong>입력 변수:</strong><br />
+                  <span class="text-muted"
+                    >{{ ai_model.input_columns|join:", " }}</span
                   >
-                    📄 PDF 보고서 다운로드
-                  </button>
+                </div>
+                <div class="mb-2">
+                  <strong>출력 변수:</strong><br />
+                  <span class="text-muted"
+                    >{{ ai_model.output_columns|join:", " }}</span
+                  >
+                </div>
+                <div class="mb-2">
+                  <strong>생성일:</strong><br />
+                  <span class="text-muted"
+                    >{{ ai_model.created_at|date:"Y-m-d H:i" }}</span
+                  >
+                </div>
+                <div id="modelMetrics" style="display: none">
+                  <hr />
+                  <h6>모델 성능</h6>
+                  <div class="small">
+                    <div>RMSE: <span id="rmseValue">-</span></div>
+                    <div>MAE: <span id="maeValue">-</span></div>
+                    <div>R² Score: <span id="r2Value">-</span></div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div class="col-md-4">
-          <!-- 모델 정보 -->
-          <div class="card mb-3">
-            <div class="card-header">
-              <h6 class="mb-0">모델 정보</h6>
-            </div>
-            <div class="card-body">
-              <div class="mb-2">
-                <strong>입력 변수:</strong><br />
-                <span class="text-muted"
-                  >{{ ai_model.input_columns|join:", " }}</span
-                >
+            <!-- 최근 예측 이력 -->
+            <div class="card">
+              <div class="card-header">
+                <h6 class="mb-0">최근 예측 이력</h6>
               </div>
-              <div class="mb-2">
-                <strong>출력 변수:</strong><br />
-                <span class="text-muted"
-                  >{{ ai_model.output_columns|join:", " }}</span
-                >
-              </div>
-              <div class="mb-2">
-                <strong>생성일:</strong><br />
-                <span class="text-muted"
-                  >{{ ai_model.created_at|date:"Y-m-d H:i" }}</span
-                >
-              </div>
-              <div id="modelMetrics" style="display: none">
-                <hr />
-                <h6>모델 성능</h6>
+              <div class="card-body">
+                {% if recent_predictions %}
                 <div class="small">
-                  <div>RMSE: <span id="rmseValue">-</span></div>
-                  <div>MAE: <span id="maeValue">-</span></div>
-                  <div>R² Score: <span id="r2Value">-</span></div>
+                  {% for prediction in recent_predictions %}
+                  <div class="mb-2 p-2 border rounded">
+                    <div class="text-muted">
+                      {{ prediction.created_at|date:"m/d H:i" }}
+                    </div>
+                    <div>
+                      결과: {{ prediction.prediction_result.value|floatformat:2
+                      }}
+                    </div>
+                    <div class="text-muted">
+                      범위: {{ prediction.prediction_range.min|floatformat:2 }}
+                      ~ {{ prediction.prediction_range.max|floatformat:2 }}
+                    </div>
+                  </div>
+                  {% endfor %}
                 </div>
+                {% else %}
+                <p class="text-muted small">예측 이력이 없습니다.</p>
+                {% endif %}
               </div>
-            </div>
-          </div>
-
-          <!-- 최근 예측 이력 -->
-          <div class="card">
-            <div class="card-header">
-              <h6 class="mb-0">최근 예측 이력</h6>
-            </div>
-            <div class="card-body">
-              {% if recent_predictions %}
-              <div class="small">
-                {% for prediction in recent_predictions %}
-                <div class="mb-2 p-2 border rounded">
-                  <div class="text-muted">
-                    {{ prediction.created_at|date:"m/d H:i" }}
-                  </div>
-                  <div>
-                    결과: {{ prediction.prediction_result.value|floatformat:2 }}
-                  </div>
-                  <div class="text-muted">
-                    범위: {{ prediction.prediction_range.min|floatformat:2 }} ~
-                    {{ prediction.prediction_range.max|floatformat:2 }}
-                  </div>
-                </div>
-                {% endfor %}
-              </div>
-              {% else %}
-              <p class="text-muted small">예측 이력이 없습니다.</p>
-              {% endif %}
             </div>
           </div>
         </div>
