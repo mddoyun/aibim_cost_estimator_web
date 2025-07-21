@@ -130,6 +130,21 @@
                   처리 중...
                 </button>
                 {% endif %}
+                <!-- 삭제 버튼 -->
+                <form
+                  method="post"
+                  action="{% url 'dd_by_ifc:delete_project' project.id %}"
+                  style="display: inline"
+                >
+                  {% csrf_token %}
+                  <button
+                    type="submit"
+                    class="btn btn-danger btn-sm"
+                    onclick="return confirm('정말로 이 프로젝트를 삭제하시겠습니까?');"
+                  >
+                    삭제
+                  </button>
+                </form>
               </div>
             </div>
           </div>

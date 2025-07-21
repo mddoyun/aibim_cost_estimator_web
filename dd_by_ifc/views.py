@@ -20,6 +20,20 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from .models import IFCObject
 from django.db import transaction
+# ./dd_by_ifc/views.py
+
+from django.shortcuts import redirect
+from django.contrib import messages
+
+def delete_project(request, project_id):
+    from .models import Project
+    project = Project.objects.filter(id=project_id).first()
+    if project:
+        project.delete()
+        messages.success(request, "프로젝트가 삭제되었습니다.")
+    else:
+        messages.error(request, "프로젝트를 찾을 수 없습니다.")
+    return redirect('dd_by_ifc:project_list')
 
 
 def convert_ifc_to_obj(ifc_path, obj_path):

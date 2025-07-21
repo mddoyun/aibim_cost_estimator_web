@@ -16,6 +16,21 @@ import base64
 import traceback
 from collections import defaultdict
 from io import BytesIO
+from django.views.decorators.http import require_POST
+from django.shortcuts import get_object_or_404, redirect
+from django.contrib import messages
+
+@require_POST
+def delete_project(request, project_id):
+    """프로젝트 삭제 기능"""
+    project = get_object_or_404(IFCProject, id=project_id)
+    project_name = project.name
+    try:
+        project.delete()
+        messages.success(request, f'프로젝트 "{project_name}"가 성공적으로 삭제되었습니다.')
+    except Exception as e:
+        messages.error(request, f'삭제 중 오류 발생: {e}')
+    return redirect('ifc_ai_prediction:project_list')
 
 # IFC 처리를 위한 import
 try:

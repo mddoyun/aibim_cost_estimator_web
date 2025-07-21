@@ -36,5 +36,6 @@ urlpatterns = [
     path('api/remove_cost_code/', views.remove_cost_code_from_objects, name='remove_cost_code_from_objects'),
     # ...
     path('api/download_new_ifc/<int:project_id>/', views.download_new_ifc_file, name='download_new_ifc_file'),
+    path('delete_project/<int:project_id>/', views.delete_project, name='delete_project'),
 
 ]
