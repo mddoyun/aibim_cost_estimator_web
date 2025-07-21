@@ -282,31 +282,8 @@
           // 버튼 텍스트도 더 명확하게 변경
           saveBtn.textContent = "공사코드 반영 IFC 파일 다운로드";
         }
-
-        // 정보 메시지 표시 (선택사항)
-        showInfoMessage();
       });
 
-      // 정보 메시지 표시 함수 (선택사항)
-      function showInfoMessage() {
-        const infoHtml = `
-    <div class="alert alert-info alert-dismissible fade show" role="alert" style="margin: 10px 0;">
-      <strong>💡 사용 안내:</strong><br>
-      • 공사코드 추가/삭제는 즉시 표에 반영됩니다<br>
-      • IFC 파일에 반영하려면 하단의 "공사코드 반영 IFC 파일 다운로드" 버튼을 클릭하세요<br>
-      • 다운로드 시 새로운 IFC 파일이 생성되므로 시간이 걸릴 수 있습니다
-      <button type="button" class="close" data-dismiss="alert">
-        <span>&times;</span>
-      </button>
-    </div>
-  `;
-
-        // first_container 상단에 정보 메시지 삽입
-        const firstContainer = document.getElementById("first_container");
-        if (firstContainer) {
-          firstContainer.insertAdjacentHTML("afterbegin", infoHtml);
-        }
-      }
       // 기본 코드리스트 로드
       function loadDefaultCostCodes() {
         fetch("{% static 'references/CodeList.csv' %}")
