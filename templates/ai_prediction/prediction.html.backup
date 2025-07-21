@@ -25,7 +25,7 @@
       <div id="header">
         <!-- Logo -->
         <h1>
-          <a href="" id="logo">AIBIM <em>Cost Estimator</em></a>
+          <a href="/" id="logo">AIBIM <em>Cost Estimator</em></a>
         </h1>
 
         <!-- Nav -->

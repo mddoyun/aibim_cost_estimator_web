@@ -919,6 +919,7 @@ def get_summary_table(request, project_id):
         'total_sum': total_sum
     })
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def load_cost_codes_from_csv(request):

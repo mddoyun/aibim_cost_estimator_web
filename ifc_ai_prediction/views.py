@@ -26,6 +26,8 @@ from .models import IFCProject, AIModel  # 실제 모델명에 맞게 import
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 
+# views.py에 추가할 AI 모델 관리 API들
+
 
 
 @require_POST

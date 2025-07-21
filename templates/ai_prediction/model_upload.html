@@ -130,7 +130,10 @@
               {% if models %}
               <div class="list-group">
                 {% for model in models %}
-                <div class="list-group-item">
+                <div
+                  class="list-group-item model-item"
+                  data-model-id="{{ model.id }}"
+                >
                   <div class="d-flex w-100 justify-content-between">
                     <h6 class="mb-1">{{ model.name }}</h6>
                     <small>{{ model.created_at|date:"Y-m-d H:i" }}</small>
@@ -140,12 +143,38 @@
                     입력: {{ model.input_columns|join:", " }}<br />
                     출력: {{ model.output_columns|join:", " }}
                   </small>
+
+                  <!-- 성능 메트릭 표시 -->
+                  {% if model.rmse %}
+                  <div class="mt-2">
+                    <small class="text-muted">
+                      <span class="badge bg-secondary me-1"
+                        >RMSE: {{ model.rmse|floatformat:4 }}</span
+                      >
+                      <span class="badge bg-secondary me-1"
+                        >MAE: {{ model.mae|floatformat:4 }}</span
+                      >
+                      <span class="badge bg-secondary"
+                        >R²: {{ model.r2_score|floatformat:4 }}</span
+                      >
+                    </small>
+                  </div>
+                  {% endif %}
+
                   <div class="mt-2">
                     <a
                       href="{% url 'ai_prediction:prediction_page' model.id %}"
-                      class="btn btn-sm btn-success"
+                      class="btn btn-sm btn-success me-2"
                       >예측하기</a
                     >
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-danger delete-model-btn"
+                      data-model-id="{{ model.id }}"
+                      data-model-name="{{ model.name }}"
+                    >
+                      삭제
+                    </button>
                   </div>
                 </div>
                 {% endfor %}
@@ -182,6 +211,39 @@
       </div>
     </div>
 
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">모델 삭제 확인</h5>
+          </div>
+          <div class="modal-body">
+            <p>
+              <strong id="deleteModelName"></strong> 모델을 정말
+              삭제하시겠습니까?
+            </p>
+            <p class="text-muted small">
+              이 작업은 되돌릴 수 없습니다. 모델 파일과 모든 예측 이력이
+              삭제됩니다.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              취소
+            </button>
+            <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+              삭제
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
       // CSRF 토큰 가져오기 함수
@@ -202,6 +264,7 @@
         return cookieValue;
       }
 
+      // 업로드 폼 처리
       document
         .getElementById("uploadForm")
         .addEventListener("submit", async function (e) {
@@ -259,6 +322,140 @@
             statusMessage.innerHTML = `<div class="alert alert-danger">업로드 중 오류가 발생했습니다: ${error.message}</div>`;
           }
         });
+
+      // 삭제 버튼 이벤트 처리
+      let currentDeleteModelId = null;
+
+      document.addEventListener("click", function (e) {
+        if (e.target.classList.contains("delete-model-btn")) {
+          const modelId = e.target.getAttribute("data-model-id");
+          const modelName = e.target.getAttribute("data-model-name");
+
+          currentDeleteModelId = modelId;
+          document.getElementById("deleteModelName").textContent = modelName;
+
+          const deleteModal = new bootstrap.Modal(
+            document.getElementById("deleteModal")
+          );
+          deleteModal.show();
+        }
+      });
+
+      // 삭제 확인 버튼 처리
+      document
+        .getElementById("confirmDeleteBtn")
+        .addEventListener("click", async function () {
+          if (!currentDeleteModelId) return;
+
+          const btn = this;
+          const originalText = btn.textContent;
+
+          // 버튼 비활성화 및 로딩 표시
+          btn.disabled = true;
+          btn.innerHTML =
+            '<span class="spinner-border spinner-border-sm" role="status"></span> 삭제 중...';
+
+          try {
+            const response = await fetch(
+              `/ai_prediction/api/delete_model/${currentDeleteModelId}/`,
+              {
+                method: "DELETE",
+                headers: {
+                  "X-CSRFToken": getCookie("csrftoken"),
+                },
+              }
+            );
+
+            const result = await response.json();
+
+            if (result.success) {
+              // 모달 닫기
+              bootstrap.Modal.getInstance(
+                document.getElementById("deleteModal")
+              ).hide();
+
+              // 해당 모델 아이템 제거 (애니메이션 효과)
+              const modelItem = document.querySelector(
+                `.model-item[data-model-id="${currentDeleteModelId}"]`
+              );
+              if (modelItem) {
+                modelItem.style.transition = "opacity 0.3s";
+                modelItem.style.opacity = "0";
+                setTimeout(() => {
+                  modelItem.remove();
+
+                  // 모든 모델이 삭제된 경우 메시지 표시
+                  const remainingModels =
+                    document.querySelectorAll(".model-item");
+                  if (remainingModels.length === 0) {
+                    document.querySelector(".list-group").innerHTML =
+                      '<p class="text-muted">업로드된 모델이 없습니다.</p>';
+                  }
+                }, 300);
+              }
+
+              // 성공 알림
+              showSuccessToast("모델이 성공적으로 삭제되었습니다.");
+            } else {
+              throw new Error(result.error || "삭제에 실패했습니다.");
+            }
+          } catch (error) {
+            console.error("Delete error:", error);
+            showErrorToast("삭제 중 오류가 발생했습니다: " + error.message);
+          } finally {
+            // 버튼 상태 복원
+            btn.disabled = false;
+            btn.textContent = originalText;
+            currentDeleteModelId = null;
+          }
+        });
+
+      // 토스트 알림 함수들
+      function showSuccessToast(message) {
+        showToast(message, "success");
+      }
+
+      function showErrorToast(message) {
+        showToast(message, "danger");
+      }
+
+      function showToast(message, type) {
+        // 토스트 컨테이너가 없으면 생성
+        let toastContainer = document.getElementById("toast-container");
+        if (!toastContainer) {
+          toastContainer = document.createElement("div");
+          toastContainer.id = "toast-container";
+          toastContainer.className =
+            "toast-container position-fixed top-0 end-0 p-3";
+          toastContainer.style.zIndex = "9999";
+          document.body.appendChild(toastContainer);
+        }
+
+        // 토스트 생성
+        const toastId = "toast-" + Date.now();
+        const toastHtml = `
+          <div class="toast" id="${toastId}" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-body bg-${type} text-white">
+              ${message}
+              <button type="button" class="btn-close btn-close-white float-end" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+          </div>
+        `;
+
+        toastContainer.insertAdjacentHTML("beforeend", toastHtml);
+
+        const toastElement = document.getElementById(toastId);
+        const toast = new bootstrap.Toast(toastElement, {
+          autohide: true,
+          delay: 3000,
+        });
+        toast.show();
+
+        // 토스트가 사라진 후 DOM에서 제거
+        toastElement.addEventListener("hidden.bs.toast", () => {
+          toastElement.remove();
+        });
+      }
     </script>
     <script src="{% static 'js/jquery.min.js'%}"></script>
     <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
