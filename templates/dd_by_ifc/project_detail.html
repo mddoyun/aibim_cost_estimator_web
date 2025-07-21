@@ -461,8 +461,168 @@
         document
           .getElementById("deselectAllColumnsBtn")
           .addEventListener("click", () => selectAllColumns(false));
+
+        // ★★★ 총금액 재계산 버튼 이벤트 ★★★
+        const recalculateBtn = document.getElementById("recalculateAmountsBtn");
+        if (recalculateBtn) {
+          recalculateBtn.addEventListener("click", recalculateAllAmounts);
+        }
       }
 
+      // 총금액 재계산 함수
+      async function recalculateAllAmounts() {
+        const btn = document.getElementById("recalculateAmountsBtn");
+        if (!btn) return;
+
+        if (
+          !confirm(
+            "모든 객체의 총금액을 다시 계산하시겠습니까?\n(객체 수가 많으면 시간이 걸릴 수 있습니다)"
+          )
+        ) {
+          return;
+        }
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.innerHTML = `
+    <div class="spinner-border spinner-border-sm" role="status" style="width: 14px; height: 14px;"></div>
+    계산 중...
+  `;
+
+        try {
+          console.log("🔄 총금액 재계산 시작...");
+
+          const response = await fetch(
+            `/dd_by_ifc/api/recalculate_amounts/${PROJECT_ID}/`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            }
+          );
+
+          const data = await response.json();
+
+          if (data.success) {
+            console.log(`✅ ${data.message}`);
+            showNotification(data.message, "success");
+
+            // 테이블들 새로고침
+            console.log("📊 테이블 데이터 새로고침 중...");
+            await Promise.all([
+              loadIFCObjects(),
+              loadSummaryTable(),
+              selectedObjectIds.length > 0
+                ? loadObjectDetails()
+                : Promise.resolve(),
+            ]);
+
+            console.log("✅ 모든 데이터 새로고침 완료");
+          } else {
+            throw new Error(data.error || "알 수 없는 오류");
+          }
+        } catch (error) {
+          console.error("❌ 총금액 재계산 실패:", error);
+          showNotification(`❌ 총금액 재계산 실패: ${error.message}`, "error");
+          alert(`총금액 재계산 중 오류가 발생했습니다:\n${error.message}`);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      }
+      // 개선된 알림 함수 (에러 타입 추가)
+      function showNotification(message, type = "info") {
+        // 기존 알림이 있으면 제거
+        const existingNotification =
+          document.getElementById("notification-toast");
+        if (existingNotification) {
+          existingNotification.remove();
+        }
+
+        // 타입별 색상 설정
+        const colors = {
+          success: "#28a745",
+          warning: "#ffc107",
+          error: "#dc3545",
+          info: "#17a2b8",
+        };
+
+        // 새 알림 생성
+        const notification = document.createElement("div");
+        notification.id = "notification-toast";
+        notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    background-color: ${colors[type] || colors.info};
+    color: white;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    z-index: 10000;
+    font-size: 14px;
+    max-width: 400px;
+    animation: slideIn 0.3s ease-out;
+    cursor: pointer;
+  `;
+        notification.textContent = message;
+
+        // CSS 애니메이션 추가 (중복 방지)
+        if (!document.getElementById("notification-styles")) {
+          const styles = document.createElement("style");
+          styles.id = "notification-styles";
+          styles.textContent = `
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+      }
+      .spinner-border-sm {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 0.125em solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spinner-border 0.75s linear infinite;
+      }
+      @keyframes spinner-border {
+        to { transform: rotate(360deg); }
+      }
+    `;
+          document.head.appendChild(styles);
+        }
+
+        document.body.appendChild(notification);
+
+        // 자동 제거 시간 (에러는 더 오래 표시)
+        const autoRemoveTime = type === "error" ? 5000 : 3000;
+
+        setTimeout(() => {
+          if (notification.parentNode) {
+            notification.style.animation = "slideOut 0.3s ease-in";
+            setTimeout(() => {
+              if (notification.parentNode) {
+                notification.remove();
+              }
+            }, 300);
+          }
+        }, autoRemoveTime);
+
+        // 클릭시 즉시 제거
+        notification.addEventListener("click", () => {
+          notification.style.animation = "slideOut 0.3s ease-in";
+          setTimeout(() => {
+            if (notification.parentNode) {
+              notification.remove();
+            }
+          }, 300);
+        });
+      }
       // 공사코드 검색
       function searchCostCodes() {
         const query = document
@@ -1166,218 +1326,246 @@
 
     <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
     <script type="module">
-      import * as THREE from "three";
-      import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+            import * as THREE from "three";
+            import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-      const viewDiv = document.getElementById("viewer");
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(
-        60,
-        viewDiv.clientWidth / viewDiv.clientHeight,
-        0.1,
-        10000
-      );
-      const renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        alpha: true,
-      });
-      renderer.setSize(viewDiv.clientWidth, viewDiv.clientHeight);
-      viewDiv.appendChild(renderer.domElement);
+            const viewDiv = document.getElementById("viewer");
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(
+              60,
+              viewDiv.clientWidth / viewDiv.clientHeight,
+              0.1,
+              10000
+            );
+            const renderer = new THREE.WebGLRenderer({
+              antialias: true,
+              alpha: true,
+            });
+            renderer.setSize(viewDiv.clientWidth, viewDiv.clientHeight);
+            viewDiv.appendChild(renderer.domElement);
 
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-      dir.position.set(10, 10, 10);
-      scene.add(dir);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+            dir.position.set(10, 10, 10);
+            scene.add(dir);
 
-      camera.position.set(10, 10, 10);
-      THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1); // IFC는 Z‑Up
+            camera.position.set(10, 10, 10);
+            THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1); // IFC는 Z‑Up
 
-      // Pyodide / IfcOpenShell 로 IFC 로드
-      const IFC_URL = "{{ ifc_abs_url }}";
-      const WHEEL_URL =
-        "{% static 'wasm/IfcOpenShell-0.7.0-py3-none-any.whl' %}";
+            // Pyodide / IfcOpenShell 로 IFC 로드
+            const IFC_URL = "{{ ifc_abs_url }}";
+            const WHEEL_URL =
+              "{% static 'wasm/IfcOpenShell-0.7.0-py3-none-any.whl' %}";
 
-      (async () => {
-        const pyodide = await loadPyodide();
-        await pyodide.loadPackage("micropip");
-        const micropip = pyodide.pyimport("micropip");
-        await micropip.install(WHEEL_URL);
+            (async () => {
+              const pyodide = await loadPyodide();
+              await pyodide.loadPackage("micropip");
+              const micropip = pyodide.pyimport("micropip");
+              await micropip.install(WHEEL_URL);
 
-        // IFC 텍스트 로드
-        const ifcText = await (await fetch(IFC_URL)).text();
+              // IFC 텍스트 로드
+              const ifcText = await (await fetch(IFC_URL)).text();
 
-        // Python: IFC 열기 + geometry iterator
-        const ifcopenshell = pyodide.pyimport("ifcopenshell");
-        const ifc = ifcopenshell.file.from_string(ifcText);
-        const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
-        const s = ifcopenshell_geom.settings();
-        s.set(s.WELD_VERTICES, false);
+              // Python: IFC 열기 + geometry iterator
+              const ifcopenshell = pyodide.pyimport("ifcopenshell");
+              const ifc = ifcopenshell.file.from_string(ifcText);
+              const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
+              const s = ifcopenshell_geom.settings();
+              s.set(s.WELD_VERTICES, false);
 
-        const it = ifcopenshell_geom.iterator(s, ifc);
-        let lastMeshId = null;
-        let geometries = [];
+              const it = ifcopenshell_geom.iterator(s, ifc);
+              let lastMeshId = null;
+              let geometries = [];
 
-        if (it.initialize()) {
-          while (true) {
-            const obj = it.get();
-            const ty = ifc.by_id(obj.id).is_a();
-            if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
-              if (lastMeshId !== obj.geometry.id) {
-                geometries = [];
+              if (it.initialize()) {
+                while (true) {
+                  const obj = it.get();
+                  const ty = ifc.by_id(obj.id).is_a();
+                  if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
+                    if (lastMeshId !== obj.geometry.id) {
+                      geometries = [];
 
-                const materials = obj.geometry.materials.toJs().map(
-                  (e) =>
-                    new THREE.MeshLambertMaterial({
-                      color: new THREE.Color(...e.diffuse.toJs()),
-                      opacity: 1.0 - e.transparency,
-                      transparent: e.transparency > 1e-5,
-                      side: THREE.DoubleSide,
-                    })
-                );
+                      const materials = obj.geometry.materials.toJs().map(
+                        (e) =>
+                          new THREE.MeshLambertMaterial({
+                            color: new THREE.Color(...e.diffuse.toJs()),
+                            opacity: 1.0 - e.transparency,
+                            transparent: e.transparency > 1e-5,
+                            side: THREE.DoubleSide,
+                          })
+                      );
 
-                const mapping = {};
-                obj.geometry.material_ids.toJs().forEach((mid, idx) => {
-                  mapping[mid] = mapping[mid] || [];
-                  mapping[mid].push(idx);
-                });
+                      const mapping = {};
+                      obj.geometry.material_ids.toJs().forEach((mid, idx) => {
+                        mapping[mid] = mapping[mid] || [];
+                        mapping[mid].push(idx);
+                      });
 
-                const vs = new Float32Array(obj.geometry.verts.toJs());
-                const ns = new Float32Array(obj.geometry.normals.toJs());
-                const fs = obj.geometry.faces.toJs();
+                      const vs = new Float32Array(obj.geometry.verts.toJs());
+                      const ns = new Float32Array(obj.geometry.normals.toJs());
+                      const fs = obj.geometry.faces.toJs();
 
-                let offset = 0;
-                if (mapping[-1]) {
-                  materials.unshift(
-                    new THREE.MeshLambertMaterial({
-                      color: new THREE.Color(0.6, 0.6, 0.6),
-                      side: THREE.DoubleSide,
-                    })
-                  );
-                  offset = 1;
+                      let offset = 0;
+                      if (mapping[-1]) {
+                        materials.unshift(
+                          new THREE.MeshLambertMaterial({
+                            color: new THREE.Color(0.6, 0.6, 0.6),
+                            side: THREE.DoubleSide,
+                          })
+                        );
+                        offset = 1;
+                      }
+
+                      materials.forEach((mat, mi) => {
+                        const idxList = mapping[mi - offset];
+                        if (!idxList) return; // 방어
+                        const g = new THREE.BufferGeometry();
+                        const flatIdx = [];
+                        idxList.forEach((i) => {
+                          flatIdx.push(fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]);
+                        });
+                        g.setIndex(flatIdx);
+                        g.setAttribute("position", new THREE.BufferAttribute(vs, 3));
+                        g.setAttribute("normal", new THREE.BufferAttribute(ns, 3));
+                        geometries.push([g, mat]);
+                      });
+
+                      lastMeshId = obj.geometry.id;
+                    }
+
+                    // Mesh 인스턴스 생성
+                    geometries.forEach(([g, mat]) => {
+                      const mesh = new THREE.Mesh(g, mat);
+                      const m = obj.transformation.matrix.data.toJs();
+                      // obj.transformation 는 열(Col-major) → Three(행) 맞추기 transpose
+                      const mat4 = new THREE.Matrix4()
+                        .set(
+                          m[0],
+                          m[1],
+                          m[2],
+                          0,
+                          m[3],
+                          m[4],
+                          m[5],
+                          0,
+                          m[6],
+                          m[7],
+                          m[8],
+                          0,
+                          m[9],
+                          m[10],
+                          m[11],
+                          1
+                        )
+                        .transpose();
+                      mesh.matrixAutoUpdate = false;
+                      mesh.matrix = mat4;
+                      scene.add(mesh);
+                    });
+                  }
+                  if (!it.next()) break;
                 }
-
-                materials.forEach((mat, mi) => {
-                  const idxList = mapping[mi - offset];
-                  if (!idxList) return; // 방어
-                  const g = new THREE.BufferGeometry();
-                  const flatIdx = [];
-                  idxList.forEach((i) => {
-                    flatIdx.push(fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]);
-                  });
-                  g.setIndex(flatIdx);
-                  g.setAttribute("position", new THREE.BufferAttribute(vs, 3));
-                  g.setAttribute("normal", new THREE.BufferAttribute(ns, 3));
-                  geometries.push([g, mat]);
-                });
-
-                lastMeshId = obj.geometry.id;
               }
 
-              // Mesh 인스턴스 생성
-              geometries.forEach(([g, mat]) => {
-                const mesh = new THREE.Mesh(g, mat);
-                const m = obj.transformation.matrix.data.toJs();
-                // obj.transformation 는 열(Col-major) → Three(행) 맞추기 transpose
-                const mat4 = new THREE.Matrix4()
-                  .set(
-                    m[0],
-                    m[1],
-                    m[2],
-                    0,
-                    m[3],
-                    m[4],
-                    m[5],
-                    0,
-                    m[6],
-                    m[7],
-                    m[8],
-                    0,
-                    m[9],
-                    m[10],
-                    m[11],
-                    1
-                  )
-                  .transpose();
-                mesh.matrixAutoUpdate = false;
-                mesh.matrix = mat4;
-                scene.add(mesh);
-              });
+              zoomToFit();
+              animate();
+            })();
+
+            function zoomToFit() {
+              const box = new THREE.Box3().setFromObject(scene);
+              const center = box.getCenter(new THREE.Vector3());
+              const size = box.getSize(new THREE.Vector3()).length();
+              const dist = size * 1.5;
+              camera.position.copy(
+                center.clone().add(new THREE.Vector3(dist, dist, dist))
+              );
+              camera.lookAt(center);
+              controls.target.copy(center);
+              controls.update();
             }
-            if (!it.next()) break;
-          }
-        }
 
-        zoomToFit();
-        animate();
-      })();
+            function animate() {
+              requestAnimationFrame(animate);
+              controls.update();
+              renderer.render(scene, camera);
+            }
 
-      function zoomToFit() {
-        const box = new THREE.Box3().setFromObject(scene);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3()).length();
-        const dist = size * 1.5;
-        camera.position.copy(
-          center.clone().add(new THREE.Vector3(dist, dist, dist))
-        );
-        camera.lookAt(center);
-        controls.target.copy(center);
-        controls.update();
-      }
+            window.addEventListener("resize", () => {
+              const w = viewDiv.clientWidth;
+              const h = viewDiv.clientHeight;
+              renderer.setSize(w, h);
+              camera.aspect = w / h;
+              camera.updateProjectionMatrix();
+            });
 
-      function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-      }
+            // 디버깅 함수 (개발 시에만 사용)
+            async function debugNewIFCGeneration() {
+              try {
+                console.log("🔍 새 IFC 파일 생성 테스트 시작...");
 
-      window.addEventListener("resize", () => {
-        const w = viewDiv.clientWidth;
-        const h = viewDiv.clientHeight;
-        renderer.setSize(w, h);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-      });
+                const response = await fetch(
+                  `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`
+                );
 
-      // 디버깅 함수 (개발 시에만 사용)
-      async function debugNewIFCGeneration() {
-        try {
-          console.log("🔍 새 IFC 파일 생성 테스트 시작...");
+                if (response.ok) {
+                  const blob = await response.blob();
+                  console.log(`✅ 새 IFC 파일 생성 성공: ${blob.size} bytes`);
 
-          const response = await fetch(
-            `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`
+                  // 실제로 다운로드하지 않고 크기만 확인
+                  return {
+                    success: true,
+                    size: blob.size,
+                    message: "파일 생성 성공",
+                  };
+                } else {
+                  const error = await response.json();
+                  console.log(`❌ 새 IFC 파일 생성 실패: ${error.error}`);
+                  return {
+                    success: false,
+                    error: error.error,
+                  };
+                }
+              } catch (error) {
+                console.log(`❌ 테스트 실패: ${error.message}`);
+                return {
+                  success: false,
+                  error: error.message,
+                };
+              }
+            }
+
+      // 페이지 로딩 시 자동 계산 여부 확인
+      document.addEventListener("DOMContentLoaded", function () {
+        // 기존 초기화 함수들
+        loadDefaultCostCodes();
+        loadIFCObjects();
+        loadSummaryTable();
+        setupEventHandlers();
+
+        // 총금액 계산 완료 알림
+        const totalObjectsUpdated = {{ total_objects_updated|default:0 }};
+        const totalObjectsCount = {{ total_objects_count|default:0 }};
+
+        if (totalObjectsUpdated > 0) {
+          console.log(`✅ 페이지 로딩 시 ${totalObjectsUpdated}/${totalObjectsCount}개 객체의 총금액이 재계산되었습니다.`);
+
+          showNotification(
+            `💰 ${totalObjectsUpdated}개 객체의 금액이 최신으로 업데이트되었습니다.`,
+            'success'
           );
-
-          if (response.ok) {
-            const blob = await response.blob();
-            console.log(`✅ 새 IFC 파일 생성 성공: ${blob.size} bytes`);
-
-            // 실제로 다운로드하지 않고 크기만 확인
-            return {
-              success: true,
-              size: blob.size,
-              message: "파일 생성 성공",
-            };
-          } else {
-            const error = await response.json();
-            console.log(`❌ 새 IFC 파일 생성 실패: ${error.error}`);
-            return {
-              success: false,
-              error: error.error,
-            };
-          }
-        } catch (error) {
-          console.log(`❌ 테스트 실패: ${error.message}`);
-          return {
-            success: false,
-            error: error.message,
-          };
         }
-      }
 
-      // 브라우저 콘솔에서 사용: debugNewIFCGeneration();
+        // 사용법 안내
+        const saveBtn = document.getElementById("saveIFCBtn");
+        if (saveBtn) {
+          saveBtn.title = "공사코드가 반영된 새로운 IFC 파일을 생성하여 다운로드합니다. 시간이 걸릴 수 있습니다.";
+          saveBtn.textContent = "공사코드 반영 IFC 파일 다운로드";
+        }
+      });
+            // 브라우저 콘솔에서 사용: debugNewIFCGeneration();
     </script>
 
     <!-- ─────────────────────────────  페이지 전용 스타일 (테이블 축소 등)  ───────────────────────────── -->

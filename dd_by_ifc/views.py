@@ -148,6 +148,9 @@ def create_default_box_obj(obj_path):
     except Exception as e:
         print(f"❌ 기본 박스 생성 실패: {e}")
 
+
+
+# 추가로, process_ifc_objects 함수도 확인해서 초기 로딩 시에도 총금액이 계산되도록 보장
 def process_ifc_objects(project):
     """IFC 파일에서 객체들을 추출하여 데이터베이스에 저장"""
     try:
@@ -161,71 +164,7 @@ def process_ifc_objects(project):
         objects = model.by_type("IfcProduct")
         
         for obj in objects:
-            # 기본 정보
-            global_id = getattr(obj, "GlobalId", "")
-            name = getattr(obj, "Name", "") or ""
-            ifc_class = obj.is_a()
-            
-            # 수량 정보 추출
-            quantities = {}
-            all_quantity_keys = set()
-            
-            for rel in getattr(obj, "IsDefinedBy", []):
-                if rel.is_a("IfcRelDefinesByProperties"):
-                    prop_def = rel.RelatingPropertyDefinition
-                    if prop_def.is_a("IfcElementQuantity"):
-                        for q in prop_def.Quantities:
-                            if hasattr(q, "Name"):
-                                full_key = q.Name
-                                short_key = full_key.split(".")[-1]  # 'Width', 'Height' 등만 사용
-                                
-                                for attr in ["LengthValue", "AreaValue", "VolumeValue", "CountValue", "WeightValue"]:
-                                    if hasattr(q, attr):
-                                        value = getattr(q, attr)
-                                        all_quantity_keys.add(short_key)
-                                        
-                                        # flat: 'Width' 형태
-                                        quantities[short_key] = value
-                                        
-                                        # dict 구조도 유지
-                                        if "." in full_key:
-                                            outer, inner = full_key.split(".", 1)
-                                            if outer not in quantities or not isinstance(quantities[outer], dict):
-                                                quantities[outer] = {}
-                                            quantities[outer][inner] = value
-                                        break
-            
-            # 속성 정보 추출 (Psets)
-            properties = {}
-            all_pset_keys = set()
-            cost_items = ""
-            
-            try:
-                psets = ifcopenshell.util.element.get_psets(obj)
-                for pset_name, props in psets.items():
-                    if isinstance(props, dict):
-                        for prop_name, prop_value in props.items():
-                            key = f"{pset_name}.{prop_name}"
-                            properties[key] = prop_value
-                            all_pset_keys.add(key)
-                            
-                            # CostItems 속성 찾기 (cnv_general PropertySet에서)
-                            if pset_name == "cnv_general" and prop_name == "CostItems":
-                                cost_items = str(prop_value) if prop_value else ""
-            except Exception as e:
-                print(f"⚠️ Pset 파싱 오류: {e}")
-            
-            # 공간 정보
-            spatial_container = ""
-            try:
-                spatial_names = []
-                for rel in obj.ContainedInStructure or []:
-                    if rel.is_a("IfcRelContainedInSpatialStructure"):
-                        container = rel.RelatingStructure
-                        spatial_names.append(f"{container.is_a()}:{getattr(container, 'Name', '')}")
-                spatial_container = ", ".join(spatial_names)
-            except:
-                pass
+            # ... (기존 코드) ...
             
             # IFC 객체 생성
             ifc_obj = IFCObject.objects.create(
@@ -239,7 +178,7 @@ def process_ifc_objects(project):
                 cost_items=cost_items  # CostItems 값
             )
             
-            # 총금액 계산
+            # ★★★ 총금액 계산 - 이 부분이 이미 있는지 확인 ★★★
             ifc_obj.calculate_total_amount()
         
         # 처리 완료 표시
@@ -349,7 +288,7 @@ def upload_project(request):
     return render(request, 'dd_by_ifc/upload.html')
 
 def project_detail(request, project_id):
-    """프로젝트 상세 작업 페이지 (기존 dd_by_ifc_result)"""
+    """프로젝트 상세 작업 페이지 (성능 최적화 버전)"""
     try:
         project = get_object_or_404(Project, id=project_id)
         
@@ -357,20 +296,50 @@ def project_detail(request, project_id):
             messages.warning(request, '프로젝트가 아직 처리 중입니다. 잠시 후 다시 시도해주세요.')
             return redirect('dd_by_ifc:project_list')
         
+        # ★★★ 성능을 고려한 총금액 재계산 ★★★
+        ifc_objects = IFCObject.objects.filter(project=project)
+        total_objects = len(ifc_objects)
+        
+        print(f"🔄 프로젝트 {project.name} - 총 {total_objects}개 객체 총금액 재계산 시작...")
+        
+        # 객체 수에 따른 처리 방식 결정
+        if total_objects <= 100:
+            # 소규모: 즉시 처리
+            updated_count = recalculate_all_amounts_sync(ifc_objects)
+            
+        elif total_objects <= 1000:
+            # 중규모: 배치 처리
+            updated_count = recalculate_all_amounts_batch(ifc_objects)
+            
+        else:
+            # 대규모: 백그라운드 처리 (선택적)
+            # 페이지는 먼저 로드하고, 계산은 비동기로
+            messages.info(request, f'⏳ {total_objects}개 객체의 총금액을 백그라운드에서 계산 중입니다. 잠시 후 새로고침해주세요.')
+            # 여기서는 동기 처리로 진행 (실제 운영환경에서는 Celery 등 사용 권장)
+            updated_count = recalculate_all_amounts_batch(ifc_objects, batch_size=200)
+        
+        print(f"✅ 총금액 재계산 완료: {updated_count}/{total_objects} 객체")
+        
         # 브라우저에서 직접 fetch 할 수 있도록 절대 URL 생성
         ifc_abs_url = request.build_absolute_uri(project.ifc_file.url) if project.ifc_file else ""
         
         context = {
             'project': project,
             'ifc_abs_url': ifc_abs_url,
+            'total_objects_updated': updated_count,
+            'total_objects_count': total_objects,
         }
         
         return render(request, 'dd_by_ifc/project_detail.html', context)
         
     except Exception as e:
         print(f"❌ 프로젝트 상세 페이지 오류: {e}")
+        import traceback
+        traceback.print_exc()
         messages.error(request, f'오류가 발생했습니다: {str(e)}')
         return redirect('dd_by_ifc:project_list')
+
+
 
 # 기존 뷰 함수들 (dd_by_ifc_result에서 사용하던 것들)
 def go_dd_by_ifc(request):
@@ -569,7 +538,7 @@ def update_ifc_cost_items_v2(ifc_model, ifc_entity, cost_items_value):
 @require_http_methods(["POST"])
 def add_cost_code_to_objects(request):
     object_ids = request.POST.getlist('object_ids[]')
-    project_id = request.POST.get('project_id')  # ← 프로젝트 ID 추가
+    project_id = request.POST.get('project_id')
     cost_code = request.POST.get('cost_code')
 
     if not object_ids or not project_id or not cost_code:
@@ -584,7 +553,10 @@ def add_cost_code_to_objects(request):
             codes = set([c.strip() for c in (obj.cost_items or "").split('+') if c.strip()])
             codes.add(cost_code)
             obj.cost_items = '+'.join(sorted(codes))
-            obj.save()
+            
+            # ★★★ 총금액 다시 계산 (내부적으로 save()도 호출함) ★★★
+            obj.calculate_total_amount()
+            
             updated_count += 1
 
     return JsonResponse({
@@ -598,7 +570,7 @@ def add_cost_code_to_objects(request):
 @require_http_methods(["POST"])
 def remove_cost_code_from_objects(request):
     object_ids = request.POST.getlist('object_ids[]')
-    project_id = request.POST.get('project_id')  # ← 프로젝트 ID 추가
+    project_id = request.POST.get('project_id')
     cost_code = request.POST.get('cost_code')
 
     if not object_ids or not project_id or not cost_code:
@@ -612,7 +584,10 @@ def remove_cost_code_from_objects(request):
             codes = [c.strip() for c in (obj.cost_items or "").split('+') if c.strip()]
             codes = [c for c in codes if c != cost_code]
             obj.cost_items = '+'.join(sorted(set(codes)))
-            obj.save()
+            
+            # ★★★ 총금액 다시 계산 (내부적으로 save()도 호출함) ★★★
+            obj.calculate_total_amount()
+            
             updated_count += 1
 
     return JsonResponse({
@@ -620,8 +595,6 @@ def remove_cost_code_from_objects(request):
         'message': f'{updated_count}개 객체에서 공사코드가 제거되었습니다.',
         'updated_objects': updated_count
     })
-
-
 def update_ifc_cost_items(ifc_model, ifc_entity, cost_items_value):
     """IFC 엔티티의 CostItems 속성을 업데이트하는 헬퍼 함수"""
     try:
@@ -1584,3 +1557,90 @@ def remove_cost_code_from_objects_simple(request):
         return JsonResponse({'success': True, 'message': f'공사코드가 제거되었습니다.'})
     except IFCObject.DoesNotExist:
         return JsonResponse({'error': '해당 객체를 찾을 수 없습니다.'}, status=404)
+
+
+def recalculate_all_amounts_sync(ifc_objects):
+    """소규모 객체: 동기 처리"""
+    updated_count = 0
+    
+    with transaction.atomic():
+        for obj in ifc_objects:
+            try:
+                old_amount = obj.total_amount
+                obj.calculate_total_amount()
+                
+                updated_count += 1
+                
+                # 변경사항 로그 (처음 5개만)
+                if old_amount != obj.total_amount and updated_count <= 5:
+                    print(f"  💰 {obj.global_id}: {old_amount:,.0f} → {obj.total_amount:,.0f} 원")
+                    
+            except Exception as e:
+                print(f"  ⚠️ 객체 {obj.global_id} 계산 오류: {e}")
+                continue
+                
+    return updated_count
+
+
+def recalculate_all_amounts_batch(ifc_objects, batch_size=50):
+    """중대규모 객체: 배치 처리"""
+    updated_count = 0
+    total_objects = len(ifc_objects)
+    
+    # 배치별로 처리
+    for i in range(0, total_objects, batch_size):
+        batch = ifc_objects[i:i + batch_size]
+        
+        with transaction.atomic():
+            for obj in batch:
+                try:
+                    old_amount = obj.total_amount
+                    obj.calculate_total_amount()
+                    updated_count += 1
+                    
+                    # 변경사항 로그 (처음 5개만)
+                    if old_amount != obj.total_amount and updated_count <= 5:
+                        print(f"  💰 {obj.global_id}: {old_amount:,.0f} → {obj.total_amount:,.0f} 원")
+                        
+                except Exception as e:
+                    print(f"  ⚠️ 객체 {obj.global_id} 계산 오류: {e}")
+                    continue
+        
+        # 진행률 출력
+        progress = min(i + batch_size, total_objects)
+        print(f"  📊 배치 진행률: {progress}/{total_objects} ({progress/total_objects*100:.1f}%)")
+    
+    return updated_count
+
+
+# ★★★ 추가: API 엔드포인트로 비동기 총금액 재계산 제공 ★★★
+@csrf_exempt
+@require_http_methods(["POST"])
+def recalculate_project_amounts(request, project_id):
+    """프로젝트의 모든 객체 총금액 재계산 API"""
+    try:
+        project = get_object_or_404(Project, id=project_id)
+        ifc_objects = IFCObject.objects.filter(project=project)
+        total_objects = len(ifc_objects)
+        
+        print(f"🔄 API 호출: 프로젝트 {project.name} 총금액 재계산...")
+        
+        updated_count = recalculate_all_amounts_batch(ifc_objects, batch_size=100)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'총 {total_objects}개 객체 중 {updated_count}개 객체의 총금액이 재계산되었습니다.',
+            'total_objects': total_objects,
+            'updated_objects': updated_count
+        })
+        
+    except Exception as e:
+        print(f"❌ 총금액 재계산 API 오류: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': f'총금액 재계산 중 오류가 발생했습니다: {str(e)}'
+        }, status=500)
+
+
+# urls.py에 추가할 URL:
+# path('api/recalculate_amounts/<int:project_id>/', views.recalculate_project_amounts, name='recalculate_project_amounts'),
