@@ -31,8 +31,10 @@ urlpatterns = [
     path('api/test_update/', views.force_update_single_object, name='force_update_single_object'),
 
     # 새로운 URL 추가
-    path('api/add_cost_code/', views.add_cost_code_to_objects_simple, name='add_cost_code_to_objects'),
-    path('api/remove_cost_code/', views.remove_cost_code_from_objects_simple, name='remove_cost_code_from_objects'),
+    # ...
+    path('api/add_cost_code/', views.add_cost_code_to_objects, name='add_cost_code_to_objects'),
+    path('api/remove_cost_code/', views.remove_cost_code_from_objects, name='remove_cost_code_from_objects'),
+    # ...
     path('api/download_new_ifc/<int:project_id>/', views.download_new_ifc_file, name='download_new_ifc_file'),
 
 ]

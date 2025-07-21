@@ -883,7 +883,7 @@
         handleObjectSelection();
       }
 
-      // 선택된 객체들의 상세 정보 로드 (API 경로 수정 및 개선)
+      // loadObjectDetails 함수만 아래처럼 수정!
       function loadObjectDetails() {
         if (selectedObjectIds.length === 0) {
           clearObjectDetails();
@@ -891,6 +891,7 @@
         }
 
         const formData = new FormData();
+        formData.append("project_id", PROJECT_ID); // <== 반드시 추가!
         selectedObjectIds.forEach((id) => formData.append("object_ids[]", id));
 
         fetch("/dd_by_ifc/api/object_details/", {
@@ -949,7 +950,6 @@
         document.getElementById("totalLabel").textContent = "총 금액: 0 원";
       }
 
-      // 공사코드 추가 메시지 개선
       function addCostCodeToObjects() {
         if (!selectedCode || selectedObjectIds.length === 0) {
           alert("공사코드와 객체를 선택해주세요.");
@@ -964,6 +964,7 @@
         const formData = new FormData();
         selectedObjectIds.forEach((id) => formData.append("object_ids[]", id));
         formData.append("cost_code", selectedCode);
+        formData.append("project_id", PROJECT_ID); // ← ★★★ 반드시 추가!
 
         fetch("/dd_by_ifc/api/add_cost_code/", {
           method: "POST",
@@ -979,18 +980,11 @@
           })
           .then((data) => {
             if (data.success) {
-              // 성공 메시지에 IFC 파일 관련 안내 추가
               alert(
                 `✅ ${data.message}\n\n💡 변경사항이 IFC 파일에 반영되려면 "수정된 IFC 파일 다운로드" 버튼을 클릭하세요.`
               );
-              console.log(
-                `✅ 공사코드 추가 성공: ${data.updated_objects}개 객체`
-              );
-
-              // 데이터 새로고침
               loadIFCObjects();
               loadSummaryTable();
-
               if (selectedObjectIds.length > 0) {
                 setTimeout(() => loadObjectDetails(), 500);
               }
@@ -1008,7 +1002,6 @@
           });
       }
 
-      // 공사코드 제거 메시지 개선
       function removeCostCodeFromObjects() {
         if (selectedObjectIds.length === 0) {
           alert("객체를 선택해주세요.");
@@ -1035,9 +1028,11 @@
         removeBtn.textContent = "제거 중...";
 
         const formData = new FormData();
+        formData.append("project_id", PROJECT_ID); // ← 반드시 추가!
         selectedObjectIds.forEach((id) => formData.append("object_ids[]", id));
-        formData.append("cost_code", codeToRemove);
+        formData.append("cost_code", codeToRemove); // ← selectedCode → codeToRemove로 변경
 
+        // 이 부분이 중요! 'add_cost_code' → 'remove_cost_code'로 변경
         fetch("/dd_by_ifc/api/remove_cost_code/", {
           method: "POST",
           body: formData,
@@ -1052,7 +1047,6 @@
           })
           .then((data) => {
             if (data.success) {
-              // 성공 메시지에 IFC 파일 관련 안내 추가
               alert(
                 `✅ ${data.message}\n\n💡 변경사항이 IFC 파일에 반영되려면 "수정된 IFC 파일 다운로드" 버튼을 클릭하세요.`
               );

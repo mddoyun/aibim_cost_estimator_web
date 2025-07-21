@@ -15,6 +15,12 @@ import ifcopenshell
 import ifcopenshell.geom
 import ifcopenshell.util.element
 from django.core.files import File
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import IFCObject
+from django.db import transaction
+
 
 def convert_ifc_to_obj(ifc_path, obj_path):
     import ifcopenshell
@@ -544,268 +550,63 @@ def update_ifc_cost_items_v2(ifc_model, ifc_entity, cost_items_value):
         return False
 
 
+
 @csrf_exempt
 @require_http_methods(["POST"])
 def add_cost_code_to_objects(request):
-    """선택된 객체들에 공사코드 추가 - 완전히 다시 작성"""
     object_ids = request.POST.getlist('object_ids[]')
+    project_id = request.POST.get('project_id')  # ← 프로젝트 ID 추가
     cost_code = request.POST.get('cost_code')
-    
-    if not object_ids or not cost_code:
+
+    if not object_ids or not project_id or not cost_code:
         return JsonResponse({'error': '필수 파라미터가 누락되었습니다.'}, status=400)
-    
-    try:
-        # 공사코드가 존재하는지 확인
-        CostCode.objects.get(code=cost_code)
-        
-        # 객체들 가져오기
-        objects = IFCObject.objects.filter(global_id__in=object_ids)
-        if not objects.exists():
-            return JsonResponse({'error': '선택된 객체를 찾을 수 없습니다.'}, status=400)
-        
-        project = objects.first().project
-        updated_count = 0
-        db_updated_count = 0
-        
-        print(f"🚀 공사코드 추가 시작: {cost_code} -> {len(objects)}개 객체")
-        
-        # 먼저 데이터베이스 업데이트
+
+    updated_count = 0
+    with transaction.atomic():
+        # 프로젝트 별로만 필터!
+        objects = IFCObject.objects.filter(project_id=project_id, global_id__in=object_ids)
         for obj in objects:
-            try:
-                existing_codes = set([c.strip() for c in obj.cost_items.split("+") if c.strip()])
-                existing_codes.add(cost_code)
-                new_cost_items = "+".join(sorted(existing_codes))
-                
-                obj.cost_items = new_cost_items
-                obj.save()
-                obj.calculate_total_amount()
-                db_updated_count += 1
-                print(f"📊 DB 업데이트: {obj.global_id} -> {new_cost_items}")
-            except Exception as e:
-                print(f"❌ DB 업데이트 실패 {obj.global_id}: {e}")
-                continue
-        
-        # IFC 파일 수정
-        if project and project.ifc_file and os.path.exists(project.ifc_file.path):
-            try:
-                print(f"📂 IFC 파일 열기: {project.ifc_file.path}")
-                ifc_model = ifcopenshell.open(project.ifc_file.path)
-                
-                # 백업 생성
-                backup_path = project.ifc_file.path + ".backup"
-                import shutil
-                shutil.copy2(project.ifc_file.path, backup_path)
-                print(f"💾 백업 생성: {backup_path}")
-                
-                for obj in objects:
-                    try:
-                        # IFC 엔티티 찾기
-                        try:
-                            ifc_entity = ifc_model.by_guid(obj.global_id)
-                        except:
-                            print(f"⚠️ IFC에서 객체 찾기 실패: {obj.global_id}")
-                            continue
-                        
-                        # 새로운 CostItems 값 계산
-                        existing_codes = set([c.strip() for c in obj.cost_items.split("+") if c.strip()])
-                        new_cost_items = "+".join(sorted(existing_codes))
-                        
-                        # PropertySet 업데이트
-                        success = update_ifc_cost_items_v2(ifc_model, ifc_entity, new_cost_items)
-                        if success:
-                            updated_count += 1
-                        
-                    except Exception as e:
-                        print(f"❌ IFC 객체 처리 실패 {obj.global_id}: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        continue
-                
-                # IFC 파일 저장
-                try:
-                    print(f"💾 IFC 파일 저장 시작...")
-                    ifc_model.write(project.ifc_file.path)
-                    
-                    # 저장 후 검증
-                    saved_size = os.path.getsize(project.ifc_file.path)
-                    backup_size = os.path.getsize(backup_path)
-                    
-                    print(f"📏 파일 크기 비교: 원본={backup_size}, 저장후={saved_size}")
-                    
-                    if saved_size < backup_size * 0.5:  # 50% 이상 줄어들면 문제
-                        raise Exception(f"저장된 파일 크기가 비정상: {saved_size} < {backup_size * 0.5}")
-                    
-                    # 저장된 파일 다시 열어서 검증
-                    test_model = ifcopenshell.open(project.ifc_file.path)
-                    test_objects = test_model.by_type("IfcProduct")
-                    print(f"🔍 저장 검증: {len(test_objects)}개 객체 확인")
-                    
-                    # 백업 파일 삭제
-                    if os.path.exists(backup_path):
-                        os.remove(backup_path)
-                    
-                    print(f"✅ IFC 파일 저장 완료: {updated_count}개 객체 업데이트")
-                    
-                except Exception as save_error:
-                    print(f"❌ IFC 파일 저장 실패: {save_error}")
-                    # 백업에서 복원
-                    if os.path.exists(backup_path):
-                        shutil.copy2(backup_path, project.ifc_file.path)
-                        print(f"🔄 백업에서 복원 완료")
-                    raise save_error
-                
-            except Exception as ifc_error:
-                print(f"❌ IFC 파일 처리 전체 실패: {ifc_error}")
-                import traceback
-                traceback.print_exc()
-                return JsonResponse({
-                    'success': True,  # DB는 성공했으므로
-                    'message': f'데이터베이스 업데이트는 완료했지만 IFC 파일 저장 실패: {str(ifc_error)}',
-                    'updated_objects': db_updated_count,
-                    'ifc_error': True
-                })
-        
-        return JsonResponse({
-            'success': True, 
-            'message': f'DB: {db_updated_count}개, IFC: {updated_count}개 객체 업데이트 완료',
-            'updated_objects': updated_count,
-            'db_updated': db_updated_count
-        })
-    
-    except CostCode.DoesNotExist:
-        return JsonResponse({'error': '존재하지 않는 공사코드입니다.'}, status=400)
-    except Exception as e:
-        print(f"❌ 전체 프로세스 실패: {e}")
-        import traceback
-        traceback.print_exc()
-        return JsonResponse({'error': str(e)}, status=500)
+            # CostItems(공사코드) 필드는 CSV 저장 (중복제거 및 정렬)
+            codes = set([c.strip() for c in (obj.cost_items or "").split('+') if c.strip()])
+            codes.add(cost_code)
+            obj.cost_items = '+'.join(sorted(codes))
+            obj.save()
+            updated_count += 1
+
+    return JsonResponse({
+        'success': True,
+        'message': f'{updated_count}개 객체에 공사코드가 추가되었습니다.',
+        'updated_objects': updated_count
+    })
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def remove_cost_code_from_objects(request):
-    """선택된 객체들에서 공사코드 제거 - 완전히 다시 작성"""
     object_ids = request.POST.getlist('object_ids[]')
+    project_id = request.POST.get('project_id')  # ← 프로젝트 ID 추가
     cost_code = request.POST.get('cost_code')
-    
-    if not object_ids or not cost_code:
+
+    if not object_ids or not project_id or not cost_code:
         return JsonResponse({'error': '필수 파라미터가 누락되었습니다.'}, status=400)
-    
-    try:
-        objects = IFCObject.objects.filter(global_id__in=object_ids)
-        if not objects.exists():
-            return JsonResponse({'error': '선택된 객체를 찾을 수 없습니다.'}, status=400)
-        
-        project = objects.first().project
-        updated_count = 0
-        db_updated_count = 0
-        
-        print(f"🗑️ 공사코드 제거 시작: {cost_code} -> {len(objects)}개 객체")
-        
-        # 먼저 데이터베이스 업데이트
+
+    updated_count = 0
+    with transaction.atomic():
+        # 프로젝트 별로만 필터!
+        objects = IFCObject.objects.filter(project_id=project_id, global_id__in=object_ids)
         for obj in objects:
-            try:
-                existing_codes = set([c.strip() for c in obj.cost_items.split("+") if c.strip()])
-                existing_codes.discard(cost_code)
-                new_cost_items = "+".join(sorted(existing_codes))
-                
-                obj.cost_items = new_cost_items
-                obj.save()
-                obj.calculate_total_amount()
-                db_updated_count += 1
-                print(f"📊 DB 업데이트: {obj.global_id} -> {new_cost_items}")
-            except Exception as e:
-                print(f"❌ DB 업데이트 실패 {obj.global_id}: {e}")
-                continue
-        
-        # IFC 파일 수정
-        if project and project.ifc_file and os.path.exists(project.ifc_file.path):
-            try:
-                print(f"📂 IFC 파일 열기: {project.ifc_file.path}")
-                ifc_model = ifcopenshell.open(project.ifc_file.path)
-                
-                # 백업 생성
-                backup_path = project.ifc_file.path + ".backup"
-                import shutil
-                shutil.copy2(project.ifc_file.path, backup_path)
-                print(f"💾 백업 생성: {backup_path}")
-                
-                for obj in objects:
-                    try:
-                        # IFC 엔티티 찾기
-                        try:
-                            ifc_entity = ifc_model.by_guid(obj.global_id)
-                        except:
-                            print(f"⚠️ IFC에서 객체 찾기 실패: {obj.global_id}")
-                            continue
-                        
-                        # 새로운 CostItems 값 계산
-                        existing_codes = set([c.strip() for c in obj.cost_items.split("+") if c.strip()])
-                        new_cost_items = "+".join(sorted(existing_codes))
-                        
-                        # PropertySet 업데이트
-                        success = update_ifc_cost_items_v2(ifc_model, ifc_entity, new_cost_items)
-                        if success:
-                            updated_count += 1
-                        
-                    except Exception as e:
-                        print(f"❌ IFC 객체 처리 실패 {obj.global_id}: {e}")
-                        continue
-                
-                # IFC 파일 저장
-                try:
-                    print(f"💾 IFC 파일 저장 시작...")
-                    ifc_model.write(project.ifc_file.path)
-                    
-                    # 저장 후 검증
-                    saved_size = os.path.getsize(project.ifc_file.path)
-                    backup_size = os.path.getsize(backup_path)
-                    
-                    print(f"📏 파일 크기 비교: 원본={backup_size}, 저장후={saved_size}")
-                    
-                    if saved_size < backup_size * 0.5:
-                        raise Exception(f"저장된 파일 크기가 비정상: {saved_size} < {backup_size * 0.5}")
-                    
-                    # 저장된 파일 검증
-                    test_model = ifcopenshell.open(project.ifc_file.path)
-                    test_objects = test_model.by_type("IfcProduct")
-                    print(f"🔍 저장 검증: {len(test_objects)}개 객체 확인")
-                    
-                    # 백업 파일 삭제
-                    if os.path.exists(backup_path):
-                        os.remove(backup_path)
-                    
-                    print(f"✅ IFC 파일 저장 완료: {updated_count}개 객체 업데이트")
-                    
-                except Exception as save_error:
-                    print(f"❌ IFC 파일 저장 실패: {save_error}")
-                    # 백업에서 복원
-                    if os.path.exists(backup_path):
-                        shutil.copy2(backup_path, project.ifc_file.path)
-                        print(f"🔄 백업에서 복원 완료")
-                    raise save_error
-                
-            except Exception as ifc_error:
-                print(f"❌ IFC 파일 처리 전체 실패: {ifc_error}")
-                return JsonResponse({
-                    'success': True,  # DB는 성공했으므로
-                    'message': f'데이터베이스 업데이트는 완료했지만 IFC 파일 저장 실패: {str(ifc_error)}',
-                    'updated_objects': db_updated_count,
-                    'ifc_error': True
-                })
-        
-        return JsonResponse({
-            'success': True, 
-            'message': f'DB: {db_updated_count}개, IFC: {updated_count}개 객체 업데이트 완료',
-            'updated_objects': updated_count,
-            'db_updated': db_updated_count
-        })
-    
-    except Exception as e:
-        print(f"❌ 전체 프로세스 실패: {e}")
-        import traceback
-        traceback.print_exc()
-        return JsonResponse({'error': str(e)}, status=500)
+            codes = [c.strip() for c in (obj.cost_items or "").split('+') if c.strip()]
+            codes = [c for c in codes if c != cost_code]
+            obj.cost_items = '+'.join(sorted(set(codes)))
+            obj.save()
+            updated_count += 1
+
+    return JsonResponse({
+        'success': True,
+        'message': f'{updated_count}개 객체에서 공사코드가 제거되었습니다.',
+        'updated_objects': updated_count
+    })
+
 
 def update_ifc_cost_items(ifc_model, ifc_entity, cost_items_value):
     """IFC 엔티티의 CostItems 속성을 업데이트하는 헬퍼 함수"""
@@ -920,13 +721,17 @@ def download_ifc_file(request, project_id):
 @csrf_exempt
 @require_http_methods(["POST"])
 def get_object_details(request):
-    """선택된 객체들의 상세 정보 반환"""
     object_ids = request.POST.getlist('object_ids[]')
-    
-    if not object_ids:
+    project_id = request.POST.get('project_id')  # 추가
+
+    if not object_ids or not project_id:
         return JsonResponse({'details': [], 'total_amount': 0})
-    
-    objects = IFCObject.objects.filter(global_id__in=object_ids)
+
+    # **프로젝트 기준으로 필터링!**
+    objects = IFCObject.objects.filter(
+        project_id=project_id,
+        global_id__in=object_ids
+    )
     
     # 코드별 수량 합계 계산
     combined_codes = defaultdict(lambda: {
@@ -1723,86 +1528,44 @@ def download_new_ifc_file(request, project_id):
         traceback.print_exc()
         return JsonResponse({'error': f'새 IFC 파일 생성 실패: {str(e)}'}, status=500)
 
-# 기존 add_cost_code_to_objects 함수도 간단하게 수정
 @csrf_exempt
 @require_http_methods(["POST"])
 def add_cost_code_to_objects_simple(request):
-    """공사코드 추가 - 데이터베이스만 업데이트 (간단 버전)"""
-    object_ids = request.POST.getlist('object_ids[]')
+    object_id = request.POST.get('object_id')
+    project_id = request.POST.get('project_id')  # 반드시 추가!
     cost_code = request.POST.get('cost_code')
-    
-    if not object_ids or not cost_code:
+
+    if not object_id or not project_id or not cost_code:
         return JsonResponse({'error': '필수 파라미터가 누락되었습니다.'}, status=400)
-    
+
     try:
-        # 공사코드 존재 확인
-        CostCode.objects.get(code=cost_code)
-        
-        # 데이터베이스만 업데이트 (IFC 파일은 다운로드 시에 생성)
-        objects = IFCObject.objects.filter(global_id__in=object_ids)
-        updated_count = 0
-        
-        for obj in objects:
-            try:
-                existing_codes = set([c.strip() for c in obj.cost_items.split("+") if c.strip()])
-                existing_codes.add(cost_code)
-                new_cost_items = "+".join(sorted(existing_codes))
-                
-                obj.cost_items = new_cost_items
-                obj.save()
-                obj.calculate_total_amount()
-                updated_count += 1
-                
-            except Exception as e:
-                print(f"❌ 객체 {obj.global_id} 업데이트 실패: {e}")
-                continue
-        
-        return JsonResponse({
-            'success': True, 
-            'message': f'{updated_count}개 객체에 공사코드가 추가되었습니다. IFC 파일은 다운로드 시 최신 상태로 생성됩니다.',
-            'updated_objects': updated_count
-        })
-    
-    except CostCode.DoesNotExist:
-        return JsonResponse({'error': '존재하지 않는 공사코드입니다.'}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        obj = IFCObject.objects.get(project_id=project_id, global_id=object_id)
+        codes = set([c.strip() for c in (obj.cost_items or "").split('+') if c.strip()])
+        codes.add(cost_code)
+        obj.cost_items = '+'.join(sorted(codes))
+        obj.save()
+        return JsonResponse({'success': True, 'message': f'공사코드가 추가되었습니다.'})
+    except IFCObject.DoesNotExist:
+        return JsonResponse({'error': '해당 객체를 찾을 수 없습니다.'}, status=404)
 
 
 @csrf_exempt
 @require_http_methods(["POST"])
 def remove_cost_code_from_objects_simple(request):
-    """공사코드 제거 - 데이터베이스만 업데이트 (간단 버전)"""
-    object_ids = request.POST.getlist('object_ids[]')
+    object_id = request.POST.get('object_id')
+    project_id = request.POST.get('project_id')  # 반드시 추가!
     cost_code = request.POST.get('cost_code')
-    
-    if not object_ids or not cost_code:
+
+    if not object_id or not project_id or not cost_code:
         return JsonResponse({'error': '필수 파라미터가 누락되었습니다.'}, status=400)
-    
+
+
     try:
-        objects = IFCObject.objects.filter(global_id__in=object_ids)
-        updated_count = 0
-        
-        for obj in objects:
-            try:
-                existing_codes = set([c.strip() for c in obj.cost_items.split("+") if c.strip()])
-                existing_codes.discard(cost_code)
-                new_cost_items = "+".join(sorted(existing_codes))
-                
-                obj.cost_items = new_cost_items
-                obj.save()
-                obj.calculate_total_amount()
-                updated_count += 1
-                
-            except Exception as e:
-                print(f"❌ 객체 {obj.global_id} 업데이트 실패: {e}")
-                continue
-        
-        return JsonResponse({
-            'success': True, 
-            'message': f'{updated_count}개 객체에서 공사코드가 제거되었습니다. IFC 파일은 다운로드 시 최신 상태로 생성됩니다.',
-            'updated_objects': updated_count
-        })
-    
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        obj = IFCObject.objects.get(project_id=project_id, global_id=object_id)
+        codes = [c.strip() for c in (obj.cost_items or "").split('+') if c.strip()]
+        codes = [c for c in codes if c != cost_code]
+        obj.cost_items = '+'.join(sorted(set(codes)))
+        obj.save()
+        return JsonResponse({'success': True, 'message': f'공사코드가 제거되었습니다.'})
+    except IFCObject.DoesNotExist:
+        return JsonResponse({'error': '해당 객체를 찾을 수 없습니다.'}, status=404)
