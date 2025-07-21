@@ -1325,249 +1325,261 @@
     </script>
 
     <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
+    <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
     <script type="module">
-            import * as THREE from "three";
-            import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+      import * as THREE from "three";
+      import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-            const viewDiv = document.getElementById("viewer");
-            const scene = new THREE.Scene();
-            const camera = new THREE.PerspectiveCamera(
-              60,
-              viewDiv.clientWidth / viewDiv.clientHeight,
-              0.1,
-              10000
-            );
-            const renderer = new THREE.WebGLRenderer({
-              antialias: true,
-              alpha: true,
-            });
-            renderer.setSize(viewDiv.clientWidth, viewDiv.clientHeight);
-            viewDiv.appendChild(renderer.domElement);
-
-            const controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-
-            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-            dir.position.set(10, 10, 10);
-            scene.add(dir);
-
-            camera.position.set(10, 10, 10);
-            THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1); // IFC는 Z‑Up
-
-            // Pyodide / IfcOpenShell 로 IFC 로드
-            const IFC_URL = "{{ ifc_abs_url }}";
-            const WHEEL_URL =
-              "{% static 'wasm/IfcOpenShell-0.7.0-py3-none-any.whl' %}";
-
-            (async () => {
-              const pyodide = await loadPyodide();
-              await pyodide.loadPackage("micropip");
-              const micropip = pyodide.pyimport("micropip");
-              await micropip.install(WHEEL_URL);
-
-              // IFC 텍스트 로드
-              const ifcText = await (await fetch(IFC_URL)).text();
-
-              // Python: IFC 열기 + geometry iterator
-              const ifcopenshell = pyodide.pyimport("ifcopenshell");
-              const ifc = ifcopenshell.file.from_string(ifcText);
-              const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
-              const s = ifcopenshell_geom.settings();
-              s.set(s.WELD_VERTICES, false);
-
-              const it = ifcopenshell_geom.iterator(s, ifc);
-              let lastMeshId = null;
-              let geometries = [];
-
-              if (it.initialize()) {
-                while (true) {
-                  const obj = it.get();
-                  const ty = ifc.by_id(obj.id).is_a();
-                  if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
-                    if (lastMeshId !== obj.geometry.id) {
-                      geometries = [];
-
-                      const materials = obj.geometry.materials.toJs().map(
-                        (e) =>
-                          new THREE.MeshLambertMaterial({
-                            color: new THREE.Color(...e.diffuse.toJs()),
-                            opacity: 1.0 - e.transparency,
-                            transparent: e.transparency > 1e-5,
-                            side: THREE.DoubleSide,
-                          })
-                      );
-
-                      const mapping = {};
-                      obj.geometry.material_ids.toJs().forEach((mid, idx) => {
-                        mapping[mid] = mapping[mid] || [];
-                        mapping[mid].push(idx);
-                      });
-
-                      const vs = new Float32Array(obj.geometry.verts.toJs());
-                      const ns = new Float32Array(obj.geometry.normals.toJs());
-                      const fs = obj.geometry.faces.toJs();
-
-                      let offset = 0;
-                      if (mapping[-1]) {
-                        materials.unshift(
-                          new THREE.MeshLambertMaterial({
-                            color: new THREE.Color(0.6, 0.6, 0.6),
-                            side: THREE.DoubleSide,
-                          })
-                        );
-                        offset = 1;
-                      }
-
-                      materials.forEach((mat, mi) => {
-                        const idxList = mapping[mi - offset];
-                        if (!idxList) return; // 방어
-                        const g = new THREE.BufferGeometry();
-                        const flatIdx = [];
-                        idxList.forEach((i) => {
-                          flatIdx.push(fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]);
-                        });
-                        g.setIndex(flatIdx);
-                        g.setAttribute("position", new THREE.BufferAttribute(vs, 3));
-                        g.setAttribute("normal", new THREE.BufferAttribute(ns, 3));
-                        geometries.push([g, mat]);
-                      });
-
-                      lastMeshId = obj.geometry.id;
-                    }
-
-                    // Mesh 인스턴스 생성
-                    geometries.forEach(([g, mat]) => {
-                      const mesh = new THREE.Mesh(g, mat);
-                      const m = obj.transformation.matrix.data.toJs();
-                      // obj.transformation 는 열(Col-major) → Three(행) 맞추기 transpose
-                      const mat4 = new THREE.Matrix4()
-                        .set(
-                          m[0],
-                          m[1],
-                          m[2],
-                          0,
-                          m[3],
-                          m[4],
-                          m[5],
-                          0,
-                          m[6],
-                          m[7],
-                          m[8],
-                          0,
-                          m[9],
-                          m[10],
-                          m[11],
-                          1
-                        )
-                        .transpose();
-                      mesh.matrixAutoUpdate = false;
-                      mesh.matrix = mat4;
-                      scene.add(mesh);
-                    });
-                  }
-                  if (!it.next()) break;
-                }
-              }
-
-              zoomToFit();
-              animate();
-            })();
-
-            function zoomToFit() {
-              const box = new THREE.Box3().setFromObject(scene);
-              const center = box.getCenter(new THREE.Vector3());
-              const size = box.getSize(new THREE.Vector3()).length();
-              const dist = size * 1.5;
-              camera.position.copy(
-                center.clone().add(new THREE.Vector3(dist, dist, dist))
-              );
-              camera.lookAt(center);
-              controls.target.copy(center);
-              controls.update();
-            }
-
-            function animate() {
-              requestAnimationFrame(animate);
-              controls.update();
-              renderer.render(scene, camera);
-            }
-
-            window.addEventListener("resize", () => {
-              const w = viewDiv.clientWidth;
-              const h = viewDiv.clientHeight;
-              renderer.setSize(w, h);
-              camera.aspect = w / h;
-              camera.updateProjectionMatrix();
-            });
-
-            // 디버깅 함수 (개발 시에만 사용)
-            async function debugNewIFCGeneration() {
-              try {
-                console.log("🔍 새 IFC 파일 생성 테스트 시작...");
-
-                const response = await fetch(
-                  `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`
-                );
-
-                if (response.ok) {
-                  const blob = await response.blob();
-                  console.log(`✅ 새 IFC 파일 생성 성공: ${blob.size} bytes`);
-
-                  // 실제로 다운로드하지 않고 크기만 확인
-                  return {
-                    success: true,
-                    size: blob.size,
-                    message: "파일 생성 성공",
-                  };
-                } else {
-                  const error = await response.json();
-                  console.log(`❌ 새 IFC 파일 생성 실패: ${error.error}`);
-                  return {
-                    success: false,
-                    error: error.error,
-                  };
-                }
-              } catch (error) {
-                console.log(`❌ 테스트 실패: ${error.message}`);
-                return {
-                  success: false,
-                  error: error.message,
-                };
-              }
-            }
-
-      // 페이지 로딩 시 자동 계산 여부 확인
-      document.addEventListener("DOMContentLoaded", function () {
-        // 기존 초기화 함수들
-        loadDefaultCostCodes();
-        loadIFCObjects();
-        loadSummaryTable();
-        setupEventHandlers();
-
-        // 총금액 계산 완료 알림
-        const totalObjectsUpdated = {{ total_objects_updated|default:0 }};
-        const totalObjectsCount = {{ total_objects_count|default:0 }};
-
-        if (totalObjectsUpdated > 0) {
-          console.log(`✅ 페이지 로딩 시 ${totalObjectsUpdated}/${totalObjectsCount}개 객체의 총금액이 재계산되었습니다.`);
-
-          showNotification(
-            `💰 ${totalObjectsUpdated}개 객체의 금액이 최신으로 업데이트되었습니다.`,
-            'success'
-          );
-        }
-
-        // 사용법 안내
-        const saveBtn = document.getElementById("saveIFCBtn");
-        if (saveBtn) {
-          saveBtn.title = "공사코드가 반영된 새로운 IFC 파일을 생성하여 다운로드합니다. 시간이 걸릴 수 있습니다.";
-          saveBtn.textContent = "공사코드 반영 IFC 파일 다운로드";
-        }
+      const viewDiv = document.getElementById("viewer");
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        60,
+        viewDiv.clientWidth / viewDiv.clientHeight,
+        0.1,
+        10000
+      );
+      const renderer = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
       });
-            // 브라우저 콘솔에서 사용: debugNewIFCGeneration();
-    </script>
+      renderer.setSize(viewDiv.clientWidth, viewDiv.clientHeight);
+      viewDiv.appendChild(renderer.domElement);
 
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(10, 10, 10);
+      scene.add(dir);
+
+      // IFC는 Z-Up 좌표계이므로 카메라 설정을 맞춤
+      camera.position.set(10, 10, 10);
+      camera.up.set(0, 0, 1); // Z축을 위로
+
+      // Three.js 전역 설정
+      THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
+
+      // Pyodide / IfcOpenShell 로 IFC 로드
+      const IFC_URL = "{{ ifc_abs_url }}";
+      const WHEEL_URL =
+        "{% static 'wasm/IfcOpenShell-0.7.0-py3-none-any.whl' %}";
+
+      (async () => {
+        try {
+          console.log("🔄 Pyodide 로딩 시작...");
+          const pyodide = await loadPyodide();
+          await pyodide.loadPackage("micropip");
+          const micropip = pyodide.pyimport("micropip");
+          await micropip.install(WHEEL_URL);
+          console.log("✅ IfcOpenShell 설치 완료");
+
+          // IFC 텍스트 로드
+          console.log("📁 IFC 파일 로딩 중...");
+          const ifcText = await (await fetch(IFC_URL)).text();
+          console.log("✅ IFC 파일 로드 완료");
+
+          // Python: IFC 열기 + geometry iterator
+          console.log("🔧 IFC 파싱 시작...");
+          const ifcopenshell = pyodide.pyimport("ifcopenshell");
+          const ifc = ifcopenshell.file.from_string(ifcText);
+          const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
+          const s = ifcopenshell_geom.settings();
+          s.set(s.WELD_VERTICES, false);
+
+          const it = ifcopenshell_geom.iterator(s, ifc);
+          let lastMeshId = null;
+          let geometries = [];
+          let objectCount = 0;
+
+          if (it.initialize()) {
+            while (true) {
+              const obj = it.get();
+              const ty = ifc.by_id(obj.id).is_a();
+              if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
+                if (lastMeshId !== obj.geometry.id) {
+                  geometries = [];
+
+                  const materials = obj.geometry.materials.toJs().map(
+                    (e) =>
+                      new THREE.MeshLambertMaterial({
+                        color: new THREE.Color(...e.diffuse.toJs()),
+                        opacity: 1.0 - e.transparency,
+                        transparent: e.transparency > 1e-5,
+                        side: THREE.DoubleSide,
+                      })
+                  );
+
+                  const mapping = {};
+                  obj.geometry.material_ids.toJs().forEach((mid, idx) => {
+                    mapping[mid] = mapping[mid] || [];
+                    mapping[mid].push(idx);
+                  });
+
+                  const vs = new Float32Array(obj.geometry.verts.toJs());
+                  const ns = new Float32Array(obj.geometry.normals.toJs());
+                  const fs = obj.geometry.faces.toJs();
+
+                  let offset = 0;
+                  if (mapping[-1]) {
+                    materials.unshift(
+                      new THREE.MeshLambertMaterial({
+                        color: new THREE.Color(0.6, 0.6, 0.6),
+                        side: THREE.DoubleSide,
+                      })
+                    );
+                    offset = 1;
+                  }
+
+                  materials.forEach((mat, mi) => {
+                    const idxList = mapping[mi - offset];
+                    if (!idxList) return;
+                    const g = new THREE.BufferGeometry();
+                    const flatIdx = [];
+                    idxList.forEach((i) => {
+                      flatIdx.push(fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]);
+                    });
+                    g.setIndex(flatIdx);
+                    g.setAttribute(
+                      "position",
+                      new THREE.BufferAttribute(vs, 3)
+                    );
+                    g.setAttribute("normal", new THREE.BufferAttribute(ns, 3));
+                    geometries.push([g, mat]);
+                  });
+
+                  lastMeshId = obj.geometry.id;
+                }
+
+                // Mesh 인스턴스 생성
+                geometries.forEach(([g, mat]) => {
+                  const mesh = new THREE.Mesh(g, mat);
+                  const m = obj.transformation.matrix.data.toJs();
+
+                  // IFC 변환 행렬을 Three.js에 적용
+                  // 기존 방식을 유지하되 더 안전하게 처리
+                  const mat4 = new THREE.Matrix4()
+                    .set(
+                      m[0],
+                      m[1],
+                      m[2],
+                      0,
+                      m[3],
+                      m[4],
+                      m[5],
+                      0,
+                      m[6],
+                      m[7],
+                      m[8],
+                      0,
+                      m[9],
+                      m[10],
+                      m[11],
+                      1
+                    )
+                    .transpose();
+
+                  mesh.matrixAutoUpdate = false;
+                  mesh.matrix = mat4;
+                  mesh.userData.ifcId = obj.id; // IFC ID 저장
+                  scene.add(mesh);
+                  objectCount++;
+                });
+              }
+              if (!it.next()) break;
+            }
+          }
+
+          console.log(`✅ IFC 지오메트리 로드 완료: ${objectCount}개 객체`);
+          zoomToFit();
+          animate();
+        } catch (error) {
+          console.error("❌ IFC 로딩 실패:", error);
+          // 에러 발생 시에도 기본 애니메이션은 시작
+          animate();
+        }
+      })();
+
+      function zoomToFit() {
+        const box = new THREE.Box3().setFromObject(scene);
+        if (box.isEmpty()) {
+          console.log("📦 씬이 비어있습니다.");
+          return;
+        }
+
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3()).length();
+        const dist = size * 1.5;
+
+        // IFC Z-up 좌표계에 맞는 카메라 포지셔닝
+        camera.position.set(
+          center.x + dist * 0.5,
+          center.y + dist * 0.5,
+          center.z + dist * 1.0 // Z축이 위쪽이므로 높은 곳에서 보기
+        );
+
+        camera.lookAt(center);
+        controls.target.copy(center);
+        controls.update();
+
+        console.log("📷 카메라 위치 조정 완료");
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+
+      window.addEventListener("resize", () => {
+        const w = viewDiv.clientWidth;
+        const h = viewDiv.clientHeight;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      });
+
+      // 디버깅 함수 (개발 시에만 사용)
+      async function debugNewIFCGeneration() {
+        try {
+          console.log("🔍 새 IFC 파일 생성 테스트 시작...");
+
+          const response = await fetch(
+            `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`
+          );
+
+          if (response.ok) {
+            const blob = await response.blob();
+            console.log(`✅ 새 IFC 파일 생성 성공: ${blob.size} bytes`);
+
+            return {
+              success: true,
+              size: blob.size,
+              message: "파일 생성 성공",
+            };
+          } else {
+            const error = await response.json();
+            console.log(`❌ 새 IFC 파일 생성 실패: ${error.error}`);
+            return {
+              success: false,
+              error: error.error,
+            };
+          }
+        } catch (error) {
+          console.log(`❌ 테스트 실패: ${error.message}`);
+          return {
+            success: false,
+            error: error.message,
+          };
+        }
+      }
+
+      // 전역으로 노출 (디버깅용)
+      window.debugNewIFCGeneration = debugNewIFCGeneration;
+      window.zoomToFit = zoomToFit;
+
+      // 브라우저 콘솔에서 사용: debugNewIFCGeneration();
+    </script>
     <!-- ─────────────────────────────  페이지 전용 스타일 (테이블 축소 등)  ───────────────────────────── -->
     <style>
       .ifc-objects-table {

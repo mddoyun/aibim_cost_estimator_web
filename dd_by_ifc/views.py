@@ -164,7 +164,71 @@ def process_ifc_objects(project):
         objects = model.by_type("IfcProduct")
         
         for obj in objects:
-            # ... (기존 코드) ...
+                 # 기본 정보
+            global_id = getattr(obj, "GlobalId", "")
+            name = getattr(obj, "Name", "") or ""
+            ifc_class = obj.is_a()
+            
+            # 수량 정보 추출
+            quantities = {}
+            all_quantity_keys = set()
+            
+            for rel in getattr(obj, "IsDefinedBy", []):
+                if rel.is_a("IfcRelDefinesByProperties"):
+                    prop_def = rel.RelatingPropertyDefinition
+                    if prop_def.is_a("IfcElementQuantity"):
+                        for q in prop_def.Quantities:
+                            if hasattr(q, "Name"):
+                                full_key = q.Name
+                                short_key = full_key.split(".")[-1]  # 'Width', 'Height' 등만 사용
+                                
+                                for attr in ["LengthValue", "AreaValue", "VolumeValue", "CountValue", "WeightValue"]:
+                                    if hasattr(q, attr):
+                                        value = getattr(q, attr)
+                                        all_quantity_keys.add(short_key)
+                                        
+                                        # flat: 'Width' 형태
+                                        quantities[short_key] = value
+                                        
+                                        # dict 구조도 유지
+                                        if "." in full_key:
+                                            outer, inner = full_key.split(".", 1)
+                                            if outer not in quantities or not isinstance(quantities[outer], dict):
+                                                quantities[outer] = {}
+                                            quantities[outer][inner] = value
+                                        break
+            
+            # 속성 정보 추출 (Psets)
+            properties = {}
+            all_pset_keys = set()
+            cost_items = ""
+            
+            try:
+                psets = ifcopenshell.util.element.get_psets(obj)
+                for pset_name, props in psets.items():
+                    if isinstance(props, dict):
+                        for prop_name, prop_value in props.items():
+                            key = f"{pset_name}.{prop_name}"
+                            properties[key] = prop_value
+                            all_pset_keys.add(key)
+                            
+                            # CostItems 속성 찾기 (cnv_general PropertySet에서)
+                            if pset_name == "cnv_general" and prop_name == "CostItems":
+                                cost_items = str(prop_value) if prop_value else ""
+            except Exception as e:
+                print(f"⚠️ Pset 파싱 오류: {e}")
+            
+            # 공간 정보
+            spatial_container = ""
+            try:
+                spatial_names = []
+                for rel in obj.ContainedInStructure or []:
+                    if rel.is_a("IfcRelContainedInSpatialStructure"):
+                        container = rel.RelatingStructure
+                        spatial_names.append(f"{container.is_a()}:{getattr(container, 'Name', '')}")
+                spatial_container = ", ".join(spatial_names)
+            except:
+                pass
             
             # IFC 객체 생성
             ifc_obj = IFCObject.objects.create(
