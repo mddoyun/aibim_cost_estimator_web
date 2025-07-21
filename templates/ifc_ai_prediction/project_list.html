@@ -100,12 +100,7 @@
                   </p>
                   {% if project.description %}
                   <p>{{ project.description }}</p>
-                  {% endif %}
-                  <p>
-                    <strong>객체 수:</strong> {{ project.summary.total_count
-                    }}개
-                  </p>
-                  {% if project.is_processed %}
+                  {% endif %} {% if project.is_processed %}
                   <span class="badge badge-success">처리 완료</span>
                   {% elif project.processing_error %}
                   <span class="badge badge-danger">처리 오류</span>

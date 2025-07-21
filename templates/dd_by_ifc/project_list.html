@@ -93,16 +93,12 @@
 
               {% if project.use %}
               <p><strong>용도:</strong> {{ project.use }}</p>
-              {% endif %}
-
+              {% endif %} {% if project.objects_count %}
               <p><strong>객체 수:</strong> {{ project.objects_count }}개</p>
+              {% endif %}{% if project.total_amount %}
 
-              <p>
-                <strong>총 견적액:</strong> {{
-                project.total_amount|floatformat:0 }}원
-              </p>
-
-              {% if project.is_processed %}
+              <p><strong>총 견적액:</strong> {{ project.total_amount }}원</p>
+              {% endif %} {% if project.is_processed %}
               <span class="badge badge-success">처리 완료</span>
               {% elif project.processing_error %}
               <span class="badge badge-danger">처리 오류</span>
