@@ -19,6 +19,24 @@ from io import BytesIO
 from django.views.decorators.http import require_POST
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib import messages
+# ifc_ai_prediction/views.py
+
+from django.shortcuts import render, redirect, get_object_or_404
+from .models import IFCProject, AIModel  # 실제 모델명에 맞게 import
+from django.views.decorators.http import require_POST
+from django.contrib import messages
+
+
+
+@require_POST
+def delete_ai_model(request, model_id):
+    ai_model = get_object_or_404(AIModel, id=model_id)
+    ai_model.delete()
+    messages.success(request, f"{ai_model.name} 모델이 삭제되었습니다.")
+    return redirect("ifc_ai_prediction:project_list")
+
+
+
 
 @require_POST
 def delete_project(request, project_id):
@@ -406,6 +424,7 @@ def project_list(request):
         print("📋 프로젝트 목록 로드 시작...")
         
         projects = IFCProject.objects.all().order_by('-created_at')
+        ai_models = AIModel.objects.all().order_by("-created_at")
         print(f"조회된 프로젝트 수: {projects.count()}")
         
         projects_list = []
@@ -425,8 +444,10 @@ def project_list(request):
             'debug_info': f"총 {len(projects_list)}개 프로젝트 로드됨"
         }
         
-        return render(request, 'ifc_ai_prediction/project_list.html', context)
-    
+        return render(request, "ifc_ai_prediction/project_list.html", {
+            "projects": projects,
+            "ai_models": ai_models,
+        })    
     except Exception as e:
         print(f"❌ 프로젝트 목록 로드 오류: {e}")
         traceback.print_exc()

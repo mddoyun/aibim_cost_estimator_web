@@ -66,74 +66,112 @@
 
     <div class="container mt-5">
       <h2 class="text-center mb-4">IFC AI 예측 프로젝트 목록</h2>
-
-      <div class="text-center mb-4">
-        <a
-          href="{% url 'ifc_ai_prediction:upload_ifc' %}"
-          class="btn btn-primary"
-        >
-          새 프로젝트 업로드
-        </a>
-      </div>
-
-      {% if error_message %}
-      <div class="alert alert-danger">{{ error_message }}</div>
-      {% endif %} {% if debug_info %}
-      <div class="alert alert-info">{{ debug_info }}</div>
-      {% endif %} {% if projects %}
       <div class="row">
-        {% for project in projects %}
-        <div class="col-md-4 mb-4">
-          <div class="card">
-            <div class="card-header bg-primary text-white">
-              <h5 class="mb-0">{{ project.name }}</h5>
+        <!-- 좌측: 프로젝트 목록 (넓게) -->
+        <div class="col-lg-8 col-md-7 mb-4">
+          <div class="text-left mb-3">
+            <a
+              href="{% url 'ifc_ai_prediction:upload_ifc' %}"
+              class="btn btn-primary"
+            >
+              새 프로젝트 업로드
+            </a>
+          </div>
+          {% if error_message %}
+          <div class="alert alert-danger">{{ error_message }}</div>
+          {% endif %} {% if debug_info %}
+          <div class="alert alert-info">{{ debug_info }}</div>
+          {% endif %} {% if projects %}
+          <div class="row">
+            {% for project in projects %}
+            <div class="col-md-12 mb-3">
+              <div class="card">
+                <div class="card-header bg-primary text-white">
+                  <h5 class="mb-0">{{ project.name }}</h5>
+                </div>
+                <div class="card-body">
+                  <p class="text-muted">
+                    생성일: {{ project.created_at|date:"Y-m-d H:i" }}
+                  </p>
+                  {% if project.description %}
+                  <p>{{ project.description }}</p>
+                  {% endif %}
+                  <p>
+                    <strong>객체 수:</strong> {{ project.summary.total_count
+                    }}개
+                  </p>
+                  {% if project.is_processed %}
+                  <span class="badge badge-success">처리 완료</span>
+                  {% elif project.processing_error %}
+                  <span class="badge badge-danger">처리 오류</span>
+                  {% else %}
+                  <span class="badge badge-warning">처리 중</span>
+                  {% endif %}
+                  <div class="mt-3">
+                    {% if project.is_processed %}
+                    <a
+                      href="{% url 'ifc_ai_prediction:prediction_page' project.id %}"
+                      class="btn btn-success btn-sm"
+                      >AI 예측하기</a
+                    >
+                    <a
+                      href="{% url 'ifc_ai_prediction:prediction_history' project.id %}"
+                      class="btn btn-secondary btn-sm"
+                      >예측 이력</a
+                    >
+                    {% else %}
+                    <button class="btn btn-secondary btn-sm" disabled>
+                      처리 중...
+                    </button>
+                    {% endif %}
+                    <form
+                      method="post"
+                      action="{% url 'ifc_ai_prediction:delete_project' project.id %}"
+                      style="display: inline"
+                      onsubmit="return confirm('이 프로젝트를 삭제하시겠습니까?');"
+                    >
+                      {% csrf_token %}
+                      <button type="submit" class="btn btn-danger btn-sm">
+                        삭제
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="card-body">
-              <p class="text-muted">
-                생성일: {{ project.created_at|date:"Y-m-d H:i" }}
-              </p>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="alert alert-info text-center">
+            <h4>업로드된 프로젝트가 없습니다</h4>
+            <p>IFC 파일을 업로드하여 AI 예측을 시작해보세요.</p>
+            <a
+              href="{% url 'ifc_ai_prediction:upload_ifc' %}"
+              class="btn btn-primary"
+            >
+              첫 번째 프로젝트 업로드하기
+            </a>
+          </div>
+          {% endif %}
+        </div>
 
-              {% if project.description %}
-              <p>{{ project.description }}</p>
-              {% endif %}
-
-              <p>
-                <strong>객체 수:</strong> {{ project.summary.total_count }}개
-              </p>
-
-              {% if project.is_processed %}
-              <span class="badge badge-success">처리 완료</span>
-              {% elif project.processing_error %}
-              <span class="badge badge-danger">처리 오류</span>
-              {% else %}
-              <span class="badge badge-warning">처리 중</span>
-              {% endif %}
-
-              <div class="mt-3">
-                {% if project.is_processed %}
-                <a
-                  href="{% url 'ifc_ai_prediction:prediction_page' project.id %}"
-                  class="btn btn-success btn-sm"
-                >
-                  AI 예측하기
-                </a>
-                <a
-                  href="{% url 'ifc_ai_prediction:prediction_history' project.id %}"
-                  class="btn btn-secondary btn-sm"
-                >
-                  예측 이력
-                </a>
-                {% else %}
-                <button class="btn btn-secondary btn-sm" disabled>
-                  처리 중...
-                </button>
-                {% endif %}
-                <!-- 삭제 버튼: 모든 프로젝트에 노출 -->
+        <!-- 우측: AI 모델 리스트 (좁게) -->
+        <div class="col-lg-4 col-md-5 mb-4">
+          <h4 class="text-primary">업로드된 AI 모델</h4>
+          {% if ai_models %}
+          <div>
+            {% for model in ai_models %}
+            <div class="card border-info mb-3">
+              <div class="card-body">
+                <h5 class="card-title">{{ model.name }}</h5>
+                <p class="card-text">
+                  {{ model.description|default:"설명 없음" }}
+                </p>
                 <form
                   method="post"
-                  action="{% url 'ifc_ai_prediction:delete_project' project.id %}"
+                  action="{% url 'ifc_ai_prediction:delete_ai_model' model.id %}"
                   style="display: inline"
-                  onsubmit="return confirm('이 프로젝트를 삭제하시겠습니까?');"
+                  onsubmit="return confirm('AI 모델을 삭제하시겠습니까?');"
                 >
                   {% csrf_token %}
                   <button type="submit" class="btn btn-danger btn-sm">
@@ -142,23 +180,15 @@
                 </form>
               </div>
             </div>
+            {% endfor %}
           </div>
+          {% else %}
+          <div class="alert alert-info">등록된 AI 모델이 없습니다.</div>
+          {% endif %}
         </div>
-        {% endfor %}
       </div>
-      {% else %}
-      <div class="alert alert-info text-center">
-        <h4>업로드된 프로젝트가 없습니다</h4>
-        <p>IFC 파일을 업로드하여 AI 예측을 시작해보세요.</p>
-        <a
-          href="{% url 'ifc_ai_prediction:upload_ifc' %}"
-          class="btn btn-primary"
-        >
-          첫 번째 프로젝트 업로드하기
-        </a>
-      </div>
-      {% endif %}
     </div>
+
     <!-- Scripts -->
     <script src="{% static 'js/jquery.min.js'%}"></script>
     <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>

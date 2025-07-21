@@ -27,5 +27,6 @@ urlpatterns = [
     path('api/mapping/<int:mapping_id>/save-result/', views.save_prediction_result, name='save_prediction_result'),
     path('api/mapping/<int:mapping_id>/generate-pdf/<int:prediction_id>/', views.generate_prediction_pdf, name='generate_prediction_pdf'),
     path('project/<int:project_id>/delete/', views.delete_project, name='delete_project'),
+    path("delete_ai_model/<int:model_id>/", views.delete_ai_model, name="delete_ai_model"),
 
 ]
