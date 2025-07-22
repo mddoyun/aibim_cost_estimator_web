@@ -351,6 +351,12 @@
 
       // 접었다/펼쳤다 및 공사코드 그룹핑 전역 변수 추가
       let expandedCostCodes = new Set(); // 펼쳐진 공사코드들
+      /* ===== PATCH: grouping helper ===== */
+      function isSummaryGrouped() {
+        return (
+          Array.isArray(summaryGroupKeys) && summaryGroupKeys.some((k) => k)
+        );
+      }
 
       function buildRowFormulaSelect(item) {
         const selVal = getItemFormulaField(item);
@@ -433,7 +439,7 @@
         recalcAllItems();
       }
 
-      // ====== ▼ 헤더(맨 앞 열)에 콤보박스 심기 ======
+      // ★ 헤더의 '산식' 콤보박스를 2번째(토글 다음) 칸에 넣는다.
       function ensureFormulaSelectTh() {
         const theadRow = document.querySelector("#summaryTable thead tr");
         if (!theadRow) return;
@@ -443,7 +449,8 @@
           th = document.createElement("th");
           th.id = "formulaSelectTh";
           th.style.minWidth = "90px";
-          theadRow.insertBefore(th, theadRow.children[2] || null);
+          // ✅ 기존 children[2] → children[1] 로 변경 (두 번째 칸)
+          theadRow.insertBefore(th, theadRow.children[1] || null);
         }
 
         th.innerHTML = `
@@ -466,11 +473,10 @@
 
         sel.value = activeFormulaField;
 
-        // 🔽🔽 여기! 기존 onchange 지우고 아래 코드로 교체 🔽🔽
         sel.onchange = (e) => {
           activeFormulaField = e.target.value;
-          rowFormulaMap.clear(); // 개별 선택값 초기화 안 하려면 주석 처리
-          recalcAllItems(); // 행별 산식 반영해서 전체 재계산
+          rowFormulaMap.clear(); // 필요 없으면 주석
+          recalcAllItems();
         };
       }
 
@@ -549,7 +555,11 @@
 
         // 각 공사코드 그룹을 렌더링
         Object.entries(groupedByCode).forEach(([costCode, items]) => {
-          renderCostCodeGroup(tbody, costCode, items);
+          // 기존
+          // renderCostCodeGroup(tbody, costCode, items);
+
+          // 변경
+          renderCostCodeGroup(tbody, costCode, items, 0);
         });
 
         console.log(
@@ -575,42 +585,44 @@
       }
 
       // 공사코드 그룹 렌더링 함수
-      function renderCostCodeGroup(tbody, costCode, items) {
+      /* ===== PATCH: renderCostCodeGroup (depth 지원) ===== */
+      function renderCostCodeGroup(tbody, costCode, items, depth = 0) {
         const isExpanded = expandedCostCodes.has(costCode);
         const toggleSymbol = isExpanded ? "−" : "+";
 
-        // 공사코드 정보 (첫 번째 아이템에서 가져오기)
+        // 첫 아이템 & 코드 데이터
         const firstItem = items[0];
         const codeInfo = codeData[costCode] || {};
 
-        // 집계 계산
+        // 합계 계산
         const totalQuantity = items.reduce(
-          (sum, item) => sum + (parseFloat(item["수량"]) || 0),
+          (s, it) => s + (parseFloat(it["수량"]) || 0),
           0
         );
         const totalAmount = items.reduce(
-          (sum, item) => sum + (parseFloat(item["총금액"]) || 0),
+          (s, it) => s + (parseFloat(it["총금액"]) || 0),
           0
         );
         const materialAmount = items.reduce(
-          (sum, item) => sum + (parseFloat(item["재료비"]) || 0),
+          (s, it) => s + (parseFloat(it["재료비"]) || 0),
           0
         );
         const laborAmount = items.reduce(
-          (sum, item) => sum + (parseFloat(item["노무비"]) || 0),
+          (s, it) => s + (parseFloat(it["노무비"]) || 0),
           0
         );
         const expenseAmount = items.reduce(
-          (sum, item) => sum + (parseFloat(item["경비"]) || 0),
+          (s, it) => s + (parseFloat(it["경비"]) || 0),
           0
         );
 
-        // 공사코드 그룹 헤더 행
+        // 그룹 헤더 행
         const groupRow = document.createElement("tr");
-        groupRow.className = "cost-code-group-header";
+        groupRow.className = "cost-code-group-header depth-" + depth;
         groupRow.dataset.costCode = costCode;
+        groupRow.dataset.depth = depth; // CSS에서 사용 가능
 
-        // 토글 버튼
+        // 1) 토글 버튼
         const toggleTd = document.createElement("td");
         toggleTd.className = "toggle-cell";
         const toggleBtn = document.createElement("button");
@@ -623,14 +635,14 @@
         toggleTd.appendChild(toggleBtn);
         groupRow.appendChild(toggleTd);
 
-        // 그룹 선택 체크박스 (해당 코드의 모든 객체 선택용)
-        const groupCheckTd = document.createElement("td");
-        // NEW: formula placeholder cell
+        // 2) 산식 셀
         const formulaTd = document.createElement("td");
         formulaTd.className = "formula-col";
-        formulaTd.textContent = activeFormulaField; // 보여주고 싶으면, 아니면 ""
+        formulaTd.textContent = activeFormulaField || "";
         groupRow.appendChild(formulaTd);
 
+        // 3) 그룹 체크박스
+        const groupCheckTd = document.createElement("td");
         const groupCheckbox = document.createElement("input");
         groupCheckbox.type = "checkbox";
         groupCheckbox.className = "cost-code-group-checkbox";
@@ -641,7 +653,7 @@
         groupCheckTd.appendChild(groupCheckbox);
         groupRow.appendChild(groupCheckTd);
 
-        // 데이터 셀들 (선택한 필드들만)
+        // 4) 데이터 셀들 (선택된 필드 기준)
         const displayData = {
           CostCode: costCode,
           공종: codeInfo["공종"] || "",
@@ -659,22 +671,20 @@
           총금액: totalAmount,
         };
 
-        summaryVisibleFields.slice(1).forEach((field) => {
-          // 첫 번째는 토글이므로 제외
+        summaryVisibleFields.slice(1).forEach((field, idx) => {
           const td = document.createElement("td");
           td.className = "group-data-cell";
-          let value = displayData[field] || firstItem[field];
+          let value = displayData[field] ?? firstItem[field];
 
-          if (typeof value === "number") {
-            value = formatNumber(value);
-          }
-
+          if (typeof value === "number") value = formatNumber(value);
           td.textContent = value || "";
           td.title = `${field}: ${value || ""}`;
+          // 들여쓰기: 실제 내용이 들어있는 첫 데이터 셀에만 padding-left
+          if (idx === 0) td.style.paddingLeft = depth * 16 + "px";
           groupRow.appendChild(td);
         });
 
-        // 그룹 행 클릭 이벤트
+        // 그룹 행 클릭 (선택/하이라이트)
         groupRow.addEventListener("click", (e) => {
           if (
             e.target.type === "checkbox" ||
@@ -686,10 +696,12 @@
 
         tbody.appendChild(groupRow);
 
-        // 펼쳐진 상태면 개별 아이템들 표시
+        // 펼쳐진 상태라면 상세행 렌더
         if (isExpanded) {
           items.forEach((item) => {
             const detailRow = createDetailRow(item, costCode);
+            // detail indent
+            detailRow.dataset.depth = depth + 1;
             tbody.appendChild(detailRow);
           });
         }
@@ -748,13 +760,14 @@
       }
 
       // 공사코드 그룹 토글
+      /* ===== PATCH: toggleCostCodeGroup ===== */
       function toggleCostCodeGroup(costCode) {
-        if (expandedCostCodes.has(costCode)) {
-          expandedCostCodes.delete(costCode);
-        } else {
-          expandedCostCodes.add(costCode);
-        }
-        renderBasicSummaryNew();
+        if (expandedCostCodes.has(costCode)) expandedCostCodes.delete(costCode);
+        else expandedCostCodes.add(costCode);
+
+        // 그룹 상태 유지해서 다시 렌더
+        if (isSummaryGrouped()) renderAdvancedSummaryNew();
+        else renderBasicSummaryNew();
       }
 
       // 공사코드 그룹 선택 핸들러
@@ -1255,23 +1268,28 @@
       // ================================================================================================
       // 고급 요약 렌더링 (그룹핑 적용) - 토글 컬럼 지원
       // ================================================================================================
+      // ===================== (PATCH) 고급 요약표 렌더링 =====================
+      // 그룹핑을 적용해도 마지막(leaf)에서는 공사코드 단위로 묶고,
+      // 각 코드 그룹마다 토글/체크박스/산식 콤보/합계가 그대로 나오게 함.
       function renderAdvancedSummaryNew() {
         const tbody = document.getElementById("summaryTableBody");
         if (!tbody) return;
 
         tbody.innerHTML = "";
-        updateSummaryTableHeader();
+        updateSummaryTableHeader(); // 헤더 정리 + 산식 콤보
 
-        // 그룹핑된 트리 구축
-        const tree = buildGroupedTree(
-          combinedItems,
-          summaryGroupKeys.filter((k) => k)
-        );
+        const keys = summaryGroupKeys.filter((k) => k);
+        if (keys.length === 0) {
+          // 그룹키가 없으면 기본 렌더로
+          renderBasicSummaryNew();
+          return;
+        }
 
-        // 렌더링
-        renderGroupedTreeNew(tbody, tree, 0, "");
+        const tree = buildGroupedTree(combinedItems, keys);
 
-        console.log(`✅ 고급 요약표 렌더링 완료`);
+        // 새 트리 렌더 함수 호출
+        renderGroupedTreeWithCodes(tbody, tree, 0, "");
+        console.log("✅ 고급 요약(그룹+공사코드) 렌더 완료");
       }
 
       function buildGroupedTree(items, groupKeys) {
@@ -1302,78 +1320,79 @@
         return grouped;
       }
 
-      function renderGroupedTreeNew(tbody, tree, depth, pathKey) {
-        Object.entries(tree).forEach(([key, value]) => {
-          if (key === "items") {
-            // 리프 노드 - 실제 아이템들 렌더링
-            value.forEach((item) => {
-              const tr = document.createElement("tr");
-              tr.className = "summary-item-row";
-              tr.dataset.uniqueKey = item._uniqueKey;
-              tr.dataset.guid = item._sourceGuid;
+      // 그룹트리 렌더 (leaf에서 공사코드 그룹핑)
+      function renderGroupedTreeWithCodes(tbody, node, depth, pathKey) {
+        // leaf: { items: [...] }
+        if (node.items) {
+          renderCostCodeChunk(tbody, node.items, depth, pathKey);
+          return;
+        }
 
-              // 빈 토글 셀
-              const emptyToggleTd = document.createElement("td");
-              tr.appendChild(emptyToggleTd);
+        // 중간 그룹 노드
+        Object.entries(node).forEach(([groupVal, child]) => {
+          const currentPath = pathKey + "|" + depth + ":" + groupVal;
+          const isExpanded = !advExpanded.has(currentPath);
+          const symbol = isExpanded ? "▼" : "▶";
 
-              // 체크박스
-              const checkTd = document.createElement("td");
-              const checkbox = document.createElement("input");
-              checkbox.type = "checkbox";
-              checkbox.value = item._sourceGuid;
-              checkbox.className = "summary-item-checkbox";
-              checkTd.appendChild(checkbox);
-              tr.appendChild(checkTd);
-              const formulaTd = document.createElement("td");
-              formulaTd.className = "formula-col";
-              tr.appendChild(formulaTd);
+          // --- 그룹 헤더 행 ---
+          const tr = document.createElement("tr");
 
-              // 데이터 셀들
-              summaryVisibleFields.forEach((field) => {
-                const td = document.createElement("td");
-                let val = item[field];
-                if (typeof val === "number") val = formatNumber(val);
-                td.textContent = val || "";
-                tr.appendChild(td);
-              });
+          tr.className = "adv-group-header";
+          tr.dataset.depth = depth;
+          tr.classList.add("depth-" + depth);
 
-              tr.addEventListener("click", (e) => {
-                if (e.target.type === "checkbox") return;
-                handleSummaryItemClick(item, tr, e);
-              });
+          // 1) 토글 셀
+          const toggleTd = document.createElement("td");
+          toggleTd.className = "toggle-cell";
+          const btn = document.createElement("button");
+          btn.className = "cost-code-toggle-btn";
+          btn.textContent = symbol;
+          btn.onclick = (e) => {
+            e.stopPropagation();
+            if (isExpanded) advExpanded.add(currentPath);
+            else advExpanded.delete(currentPath);
+            renderAdvancedSummaryNew();
+          };
+          toggleTd.appendChild(btn);
+          tr.appendChild(toggleTd);
 
-              tbody.appendChild(tr);
-            });
-          } else {
-            // 그룹 헤더
-            const currentPath = pathKey + "|" + key;
-            const isExpanded = !advExpanded.has(currentPath);
-            const symbol = isExpanded ? "▼" : "▶";
+          // 2) 산식 칸(비움)
+          const formulaTd = document.createElement("td");
+          formulaTd.className = "formula-col";
+          tr.appendChild(formulaTd);
 
-            const tr = document.createElement("tr");
-            tr.className = "adv-group-header";
+          // 3) 체크박스 칸(비움)
+          const chkTd = document.createElement("td");
+          tr.appendChild(chkTd);
 
-            // 빈 토글 셀
-            const emptyToggleTd = document.createElement("td");
-            tr.appendChild(emptyToggleTd);
+          // 4) 데이터 칸들 한 방에 colspan
+          // 현재 헤더 전체 칸 수
+          const totalCols = document.querySelector("#summaryTable thead tr")
+            .children.length;
+          const spanTd = document.createElement("td");
+          spanTd.colSpan = totalCols - 3; // 앞 3개(토글/산식/체크박스) 제외
+          spanTd.textContent = `${" ".repeat(depth * 2)}${
+            summaryGroupKeys[depth]
+          } : ${groupVal}`;
+          spanTd.style.paddingLeft = depth * 16 + "px";
 
-            const td = document.createElement("td");
-            td.colSpan = summaryVisibleFields.length + 1; // +1 for checkbox column
-            td.textContent = `${" ".repeat(depth * 2)}${symbol} ${key}`;
-            tr.appendChild(td);
+          tr.appendChild(spanTd);
 
-            tr.addEventListener("click", () => {
-              if (isExpanded) advExpanded.add(currentPath);
-              else advExpanded.delete(currentPath);
-              renderAdvancedSummaryNew();
-            });
+          tbody.appendChild(tr);
 
-            tbody.appendChild(tr);
-
-            if (isExpanded) {
-              renderGroupedTreeNew(tbody, value, depth + 1, currentPath);
-            }
+          // 펼쳐져있으면 하위 렌더
+          if (isExpanded) {
+            renderGroupedTreeWithCodes(tbody, child, depth + 1, currentPath);
           }
+        });
+      }
+
+      // leaf에서 공사코드 그룹핑 + 기존 renderCostCodeGroup 재사용
+      /* ===== PATCH: renderCostCodeChunk (depth 전달) ===== */
+      function renderCostCodeChunk(tbody, items, depth, pathKey) {
+        const groupedByCode = groupItemsByCostCode(items);
+        Object.entries(groupedByCode).forEach(([costCode, arr]) => {
+          renderCostCodeGroup(tbody, costCode, arr, depth); // depth 전달!
         });
       }
 
@@ -4046,6 +4065,50 @@
         background: #ddd !important;
         font-weight: bold;
         cursor: pointer;
+      }
+      /* ===== PATCH: 그룹 depth 시각화 ===== */
+      tr.depth-0 {
+        background: #e9ecef !important;
+      }
+      tr.depth-1 {
+        background: #f5f7ff !important;
+      }
+      tr.depth-2 {
+        background: #fafbff !important;
+      }
+
+      tr.depth-0.cost-code-group-header {
+        border-left-color: #007bff;
+      }
+      tr.depth-1.cost-code-group-header {
+        border-left-color: #6c8cff;
+      }
+      tr.depth-2.cost-code-group-header {
+        border-left-color: #9ab0ff;
+      }
+
+      tr.depth-0.adv-group-header {
+        background: #dfe3ea !important;
+      }
+      tr.depth-1.adv-group-header {
+        background: #eef1f7 !important;
+      }
+      tr.depth-2.adv-group-header {
+        background: #f7f9fd !important;
+      }
+
+      /* 상세(leaf) 들여쓰기 느낌 */
+      tr.cost-code-detail-row[data-depth="1"] td:first-child {
+        padding-left: 12px;
+      }
+      tr.cost-code-detail-row[data-depth="2"] td:first-child {
+        padding-left: 24px;
+      }
+
+      /* 토글/체크/산식 3개 고정열 이후의 첫 데이터 셀만 큰 들여쓰기 */
+      .cost-code-group-header td.group-data-cell:first-of-type,
+      .adv-group-header td:last-child {
+        position: relative;
       }
     </style>
   </body>
