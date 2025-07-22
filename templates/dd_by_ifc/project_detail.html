@@ -97,65 +97,93 @@
 
     <!-- ─────────────────────────────  전체 코드 요약 테이블  ───────────────────────────── -->
     <div class="container_detail_first" id="first_container">
-      <div class="container_detail">
-        <div style="font-weight: bold">공종별 내역서</div>
-      </div>
-      <div
-        class="summary-group-bar"
-        id="summaryGroupBar"
-        style="margin: 6px 0 10px 0; font-size: 11px"
-      >
-        <div>
-          1단계 그룹:
-          <select id="summaryGroup1" style="font-size: 11px; padding: 2px 4px">
-            <option value="">없음</option>
-          </select>
-
-          2단계 그룹:
-          <select id="summaryGroup2" style="font-size: 11px; padding: 2px 4px">
-            <option value="">없음</option>
-          </select>
-
-          3단계 그룹:
-          <select id="summaryGroup3" style="font-size: 11px; padding: 2px 4px">
-            <option value="">없음</option>
-          </select>
+      <!-- 그룹 설정 및 테이블 영역 (접기/펴기 가능) -->
+      <div class="collapsible-section">
+        <div class="collapsible-header" onclick="toggleSection('summaryTable')">
+          <span class="toggle-icon" id="summaryTable-icon">▼</span>
+          <span>내역서</span>
         </div>
-      </div>
+        <div class="collapsible-content" id="summaryTable-content">
+          <div
+            class="summary-group-bar"
+            id="summaryGroupBar"
+            style="margin: 6px 0 10px 0; font-size: 11px"
+          >
+            <div>
+              1단계 그룹:
+              <select
+                id="summaryGroup1"
+                style="font-size: 11px; padding: 2px 4px"
+              >
+                <option value="">없음</option>
+              </select>
 
-      <div class="container_detail">
-        <div class="table-wrapper" style="overflow-x: auto">
-          <table id="summaryTable" class="table table-bordered aibim-table">
-            <thead>
-              <tr>
-                <th><input type="checkbox" id="summarySelectAllCheckbox" /></th>
-                <th>공사코드</th>
-                <th>공종</th>
-                <th>명칭</th>
-                <th>규격</th>
-                <th>단위</th>
-                <th>수량</th>
-                <th>재료비단가</th>
-                <th>재료비</th>
-                <th>노무비단가</th>
-                <th>노무비</th>
-                <th>경비단가</th>
-                <th>경비</th>
-                <th>합계단가</th>
-                <th>총금액</th>
-              </tr>
-            </thead>
-            <tbody id="summaryTableBody"></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="container_detail">
-        <div class="summary-total-label" id="summaryTotalLabel">
-          요약 총 금액: 0 원
+              2단계 그룹:
+              <select
+                id="summaryGroup2"
+                style="font-size: 11px; padding: 2px 4px"
+              >
+                <option value="">없음</option>
+              </select>
+
+              3단계 그룹:
+              <select
+                id="summaryGroup3"
+                style="font-size: 11px; padding: 2px 4px"
+              >
+                <option value="">없음</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="container_detail">
+            <div class="table-wrapper" style="overflow-x: auto">
+              <table id="summaryTable" class="table table-bordered aibim-table">
+                <thead>
+                  <tr>
+                    <th style="width: 30px">토글</th>
+                    <th>
+                      <input type="checkbox" id="summarySelectAllCheckbox" />
+                    </th>
+                    <th>공사코드</th>
+                    <th>공종</th>
+                    <th>명칭</th>
+                    <th>규격</th>
+                    <th>단위</th>
+                    <th>수량</th>
+                    <th>재료비단가</th>
+                    <th>재료비</th>
+                    <th>노무비단가</th>
+                    <th>노무비</th>
+                    <th>경비단가</th>
+                    <th>경비</th>
+                    <th>합계단가</th>
+                    <th>총금액</th>
+                  </tr>
+                </thead>
+                <tbody id="summaryTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="container_detail">
+            <div class="summary-total-label" id="summaryTotalLabel">
+              요약 총 금액: 0 원
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- 필드 선택 영역 (접기/펴기 가능) -->
+    <div class="collapsible-section">
+      <div class="collapsible-header" onclick="toggleSection('fieldSelector')">
+        <span class="toggle-icon" id="fieldSelector-icon">▼</span>
+        <span>내역서 필드 선택</span>
+      </div>
+      <div class="collapsible-content" id="fieldSelector-content">
+        <!-- 필드 선택 UI가 여기에 동적으로 삽입됩니다 -->
+      </div>
+    </div>
     <!-- 펼치기/접기 버튼 -->
     <div>
       <button class="cnv_divide" id="folding_line" onclick="foldingAction()">
@@ -306,6 +334,360 @@
       let headers = [];
       let visibleHeaders = []; // 표시할 헤더들
 
+      // 접었다/펼쳤다 및 공사코드 그룹핑 전역 변수 추가
+      let expandedCostCodes = new Set(); // 펼쳐진 공사코드들
+
+      // ================================================================================================
+      // 필드 선택 UI 생성/업데이트 (위치 변경)
+      // ================================================================================================
+      // ====================== 필드 선택 UI (접이식 영역용) ======================
+      function renderSummaryFieldSelector() {
+        const selectorContainer = document.getElementById(
+          "fieldSelector-content"
+        );
+        if (!selectorContainer) return;
+
+        selectorContainer.innerHTML = `
+    <div class="field-selector-header">
+      <div class="field-selector-buttons">
+        <button class="btn-small" id="selectAllSummaryFields">모두 선택</button>
+        <button class="btn-small" id="deselectAllSummaryFields">모두 해제</button>
+        <button class="btn-small" id="resetDefaultSummaryFields">기본값</button>
+      </div>
+    </div>
+    <div class="field-checkboxes-container">
+      <div class="field-checkboxes" id="summaryFieldCheckboxes"></div>
+    </div>
+  `;
+
+        // 체크박스 그리기
+        const checkboxContainer = document.getElementById(
+          "summaryFieldCheckboxes"
+        );
+        if (!checkboxContainer) return;
+
+        checkboxContainer.innerHTML = "";
+        summaryAllFields.forEach((field) => {
+          const div = document.createElement("div");
+          div.className = "field-checkbox";
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.id = `summaryField_${field}`;
+          checkbox.value = field;
+          checkbox.checked = summaryVisibleFields.includes(field);
+          checkbox.addEventListener("change", handleSummaryFieldToggle);
+
+          const label = document.createElement("label");
+          label.htmlFor = `summaryField_${field}`;
+          label.textContent = field;
+
+          div.appendChild(checkbox);
+          div.appendChild(label);
+          checkboxContainer.appendChild(div);
+        });
+
+        // 버튼 이벤트 연결
+        document.getElementById("selectAllSummaryFields").onclick = () =>
+          selectAllSummaryFields(true);
+        document.getElementById("deselectAllSummaryFields").onclick = () =>
+          selectAllSummaryFields(false);
+        document.getElementById("resetDefaultSummaryFields").onclick =
+          resetDefaultSummaryFields;
+      }
+
+      // ================================================================================================
+      // 새로운 테이블 렌더링 - 공사코드별 그룹핑
+      // ================================================================================================
+      function renderBasicSummaryNew() {
+        const tbody = document.getElementById("summaryTableBody");
+        if (!tbody) return;
+
+        tbody.innerHTML = "";
+
+        // 헤더 업데이트 (토글 컬럼 포함)
+        updateSummaryTableHeader();
+
+        // 공사코드별로 그룹핑
+        const groupedByCode = groupItemsByCostCode(combinedItems);
+
+        // 각 공사코드 그룹을 렌더링
+        Object.entries(groupedByCode).forEach(([costCode, items]) => {
+          renderCostCodeGroup(tbody, costCode, items);
+        });
+
+        console.log(
+          `✅ 공사코드별 요약표 렌더링 완료: ${
+            Object.keys(groupedByCode).length
+          }개 코드 그룹`
+        );
+      }
+
+      // 공사코드별 그룹핑 함수
+      function groupItemsByCostCode(items) {
+        const grouped = {};
+
+        items.forEach((item) => {
+          const code = item.CostCode || "코드없음";
+          if (!grouped[code]) {
+            grouped[code] = [];
+          }
+          grouped[code].push(item);
+        });
+
+        return grouped;
+      }
+
+      // 공사코드 그룹 렌더링 함수
+      function renderCostCodeGroup(tbody, costCode, items) {
+        const isExpanded = expandedCostCodes.has(costCode);
+        const toggleSymbol = isExpanded ? "−" : "+";
+
+        // 공사코드 정보 (첫 번째 아이템에서 가져오기)
+        const firstItem = items[0];
+        const codeInfo = codeData[costCode] || {};
+
+        // 집계 계산
+        const totalQuantity = items.reduce(
+          (sum, item) => sum + (parseFloat(item["수량"]) || 0),
+          0
+        );
+        const totalAmount = items.reduce(
+          (sum, item) => sum + (parseFloat(item["총금액"]) || 0),
+          0
+        );
+        const materialAmount = items.reduce(
+          (sum, item) => sum + (parseFloat(item["재료비"]) || 0),
+          0
+        );
+        const laborAmount = items.reduce(
+          (sum, item) => sum + (parseFloat(item["노무비"]) || 0),
+          0
+        );
+        const expenseAmount = items.reduce(
+          (sum, item) => sum + (parseFloat(item["경비"]) || 0),
+          0
+        );
+
+        // 공사코드 그룹 헤더 행
+        const groupRow = document.createElement("tr");
+        groupRow.className = "cost-code-group-header";
+        groupRow.dataset.costCode = costCode;
+
+        // 토글 버튼
+        const toggleTd = document.createElement("td");
+        toggleTd.className = "toggle-cell";
+        const toggleBtn = document.createElement("button");
+        toggleBtn.className = "cost-code-toggle-btn";
+        toggleBtn.textContent = toggleSymbol;
+        toggleBtn.onclick = (e) => {
+          e.stopPropagation();
+          toggleCostCodeGroup(costCode);
+        };
+        toggleTd.appendChild(toggleBtn);
+        groupRow.appendChild(toggleTd);
+
+        // 그룹 선택 체크박스 (해당 코드의 모든 객체 선택용)
+        const groupCheckTd = document.createElement("td");
+        const groupCheckbox = document.createElement("input");
+        groupCheckbox.type = "checkbox";
+        groupCheckbox.className = "cost-code-group-checkbox";
+        groupCheckbox.dataset.costCode = costCode;
+        groupCheckbox.addEventListener("change", (e) => {
+          handleCostCodeGroupSelection(costCode, e.target.checked);
+        });
+        groupCheckTd.appendChild(groupCheckbox);
+        groupRow.appendChild(groupCheckTd);
+
+        // 데이터 셀들 (선택한 필드들만)
+        const displayData = {
+          CostCode: costCode,
+          공종: codeInfo["공종"] || "",
+          명칭: codeInfo["명칭"] || "",
+          규격: codeInfo["규격"] || "",
+          단위: codeInfo["단위"] || "",
+          수량: totalQuantity,
+          재료비단가: codeInfo["재료비단가"] || 0,
+          재료비: materialAmount,
+          노무비단가: codeInfo["노무비단가"] || 0,
+          노무비: laborAmount,
+          경비단가: codeInfo["경비단가"] || 0,
+          경비: expenseAmount,
+          합계단가: codeInfo["합계단가"] || 0,
+          총금액: totalAmount,
+        };
+
+        summaryVisibleFields.slice(1).forEach((field) => {
+          // 첫 번째는 토글이므로 제외
+          const td = document.createElement("td");
+          td.className = "group-data-cell";
+          let value = displayData[field] || firstItem[field];
+
+          if (typeof value === "number") {
+            value = formatNumber(value);
+          }
+
+          td.textContent = value || "";
+          td.title = `${field}: ${value || ""}`;
+          groupRow.appendChild(td);
+        });
+
+        // 그룹 행 클릭 이벤트
+        groupRow.addEventListener("click", (e) => {
+          if (
+            e.target.type === "checkbox" ||
+            e.target.classList.contains("cost-code-toggle-btn")
+          )
+            return;
+          handleCostCodeGroupClick(costCode, items, e);
+        });
+
+        tbody.appendChild(groupRow);
+
+        // 펼쳐진 상태면 개별 아이템들 표시
+        if (isExpanded) {
+          items.forEach((item) => {
+            const detailRow = createDetailRow(item, costCode);
+            tbody.appendChild(detailRow);
+          });
+        }
+      }
+
+      // 개별 아이템 행 생성
+      function createDetailRow(item, parentCostCode) {
+        const tr = document.createElement("tr");
+        tr.className = "cost-code-detail-row";
+        tr.dataset.parentCode = parentCostCode;
+        tr.dataset.uniqueKey = item._uniqueKey;
+        tr.dataset.guid = item._sourceGuid;
+
+        // 빈 토글 셀
+        const emptyToggleTd = document.createElement("td");
+        emptyToggleTd.className = "detail-indent";
+        tr.appendChild(emptyToggleTd);
+
+        // 체크박스
+        const checkTd = document.createElement("td");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = item._sourceGuid;
+        checkbox.className = "summary-item-checkbox";
+        checkTd.appendChild(checkbox);
+        tr.appendChild(checkTd);
+
+        // 선택한 필드들만 표시
+        summaryVisibleFields.slice(1).forEach((field) => {
+          // 첫 번째는 토글이므로 제외
+          const td = document.createElement("td");
+          td.className = "detail-data-cell";
+          let value = item[field];
+
+          if (typeof value === "number") {
+            value = formatNumber(value);
+          }
+
+          td.textContent = value || "";
+          td.title = `${field}: ${value || ""}`;
+          tr.appendChild(td);
+        });
+
+        // 행 클릭 이벤트
+        tr.addEventListener("click", (e) => {
+          if (e.target.type === "checkbox") return;
+          handleSummaryItemClick(item, tr, e);
+        });
+
+        return tr;
+      }
+
+      // 공사코드 그룹 토글
+      function toggleCostCodeGroup(costCode) {
+        if (expandedCostCodes.has(costCode)) {
+          expandedCostCodes.delete(costCode);
+        } else {
+          expandedCostCodes.add(costCode);
+        }
+        renderBasicSummaryNew();
+      }
+
+      // 공사코드 그룹 선택 핸들러
+      function handleCostCodeGroupSelection(costCode, isChecked) {
+        const groupItems = combinedItems.filter(
+          (item) => (item.CostCode || "코드없음") === costCode
+        );
+        const guids = groupItems
+          .map((item) => item._sourceGuid)
+          .filter(Boolean);
+
+        // 해당 그룹의 개별 체크박스들도 업데이트
+        document
+          .querySelectorAll(
+            `tr[data-parent-code="${costCode}"] .summary-item-checkbox`
+          )
+          .forEach((cb) => {
+            cb.checked = isChecked;
+            const guid = cb.value;
+            if (isChecked) {
+              window.selectedGuids.add(guid);
+            } else {
+              window.selectedGuids.delete(guid);
+            }
+          });
+
+        // 3D 뷰어 동기화
+        window.selectRowsByGuids(Array.from(window.selectedGuids));
+        if (window.ifcViewer) {
+          window.ifcViewer.setSelection(Array.from(window.selectedGuids));
+        }
+      }
+
+      // 공사코드 그룹 클릭 핸들러
+      function handleCostCodeGroupClick(costCode, items, event) {
+        const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+
+        const guids = items.map((item) => item._sourceGuid).filter(Boolean);
+
+        if (additive) {
+          guids.forEach((guid) => window.selectedGuids.add(guid));
+        } else {
+          window.selectedGuids.clear();
+          guids.forEach((guid) => window.selectedGuids.add(guid));
+        }
+
+        window.selectRowsByGuids(Array.from(window.selectedGuids));
+        if (window.ifcViewer) {
+          window.ifcViewer.setSelection(Array.from(window.selectedGuids));
+        }
+
+        // 그룹 행 하이라이트
+        if (!additive) {
+          document
+            .querySelectorAll(".cost-code-group-header")
+            .forEach((r) => r.classList.remove("selected-main"));
+        }
+        event.currentTarget.classList.add("selected-main");
+      }
+
+      // ================================================================================================
+      // 테이블 헤더 업데이트 (토글 컬럼 포함)
+      // ================================================================================================
+      function updateSummaryTableHeader() {
+        const thead = document.querySelector("#summaryTable thead tr");
+        if (!thead) return;
+
+        // 기존 헤더 (토글, 체크박스 제외) 제거
+        while (thead.children.length > 2) {
+          thead.removeChild(thead.lastChild);
+        }
+
+        // 선택한 필드들로 헤더 재구성 (첫 번째 필드 제외 - 토글용)
+        summaryVisibleFields.slice(1).forEach((field) => {
+          const th = document.createElement("th");
+          th.textContent = field;
+          thead.appendChild(th);
+        });
+      }
+
       // ================================================================================================
       // 새로운 공종별 내역서 전용 전역 변수들
       // ================================================================================================
@@ -313,12 +695,8 @@
       let summaryVisibleFields = []; // 요약표에서 보여줄 필드들
       let summaryAllFields = []; // 요약표에서 사용 가능한 모든 필드들
 
-      // 기본 표시할 필드들 정의
+      // 기본 표시할 필드들 정의 (토글 컬럼은 별도 처리)
       const DEFAULT_SUMMARY_FIELDS = [
-        "GlobalId",
-        "Name",
-        "IfcClass",
-        "SpatialContainer",
         "CostCode", // 공사코드
         "공종", // 공사코드 속성
         "명칭", // 공사코드 속성
@@ -330,6 +708,10 @@
         "경비단가",
         "합계단가",
         "총금액",
+        "GlobalId",
+        "Name",
+        "IfcClass",
+        "SpatialContainer",
       ];
 
       // ==== Viewer <-> Table Sync State ====
@@ -418,6 +800,25 @@
       window.selectedGuids = selectedGuids;
       window.guidToRow = guidToRow;
       window.handleTableRowClick = handleTableRowClick;
+
+      // ================================================================================================
+      // 접었다/펼쳤다 기능
+      // ================================================================================================
+      function toggleSection(sectionId) {
+        const content = document.getElementById(sectionId + "-content");
+        const icon = document.getElementById(sectionId + "-icon");
+
+        if (content.style.display === "none") {
+          content.style.display = "block";
+          icon.textContent = "▼";
+        } else {
+          content.style.display = "none";
+          icon.textContent = "▶";
+        }
+      }
+
+      // 전역에 노출
+      window.toggleSection = toggleSection;
 
       // ================================================================================================
       // 새로운 공종별 내역서 - 객체-공사코드 조합 생성 함수
@@ -620,7 +1021,7 @@
           "요약 총 금액: " + totalAmount.toLocaleString("ko-KR") + " 원";
 
         // 필드 선택 UI 업데이트
-        updateSummaryFieldSelector();
+        renderSummaryFieldSelector();
 
         // 테이블 렌더링
         refreshSummaryTable();
@@ -852,7 +1253,7 @@
       }
 
       // ================================================================================================
-      // 고급 요약 렌더링 (그룹핑 적용)
+      // 고급 요약 렌더링 (그룹핑 적용) - 토글 컬럼 지원
       // ================================================================================================
       function renderAdvancedSummaryNew() {
         const tbody = document.getElementById("summaryTableBody");
@@ -911,6 +1312,10 @@
               tr.dataset.uniqueKey = item._uniqueKey;
               tr.dataset.guid = item._sourceGuid;
 
+              // 빈 토글 셀
+              const emptyToggleTd = document.createElement("td");
+              tr.appendChild(emptyToggleTd);
+
               // 체크박스
               const checkTd = document.createElement("td");
               const checkbox = document.createElement("input");
@@ -945,8 +1350,12 @@
             const tr = document.createElement("tr");
             tr.className = "adv-group-header";
 
+            // 빈 토글 셀
+            const emptyToggleTd = document.createElement("td");
+            tr.appendChild(emptyToggleTd);
+
             const td = document.createElement("td");
-            td.colSpan = summaryVisibleFields.length + 1;
+            td.colSpan = summaryVisibleFields.length + 1; // +1 for checkbox column
             td.textContent = `${" ".repeat(depth * 2)}${symbol} ${key}`;
             tr.appendChild(td);
 
@@ -966,22 +1375,29 @@
       }
 
       // ================================================================================================
-      // 요약표 전용 이벤트 핸들러들
+      // 요약표 전용 이벤트 핸들러들 (공사코드 그룹핑 지원)
       // ================================================================================================
       function setupSummaryEventHandlers() {
         // 전체 선택 체크박스 (요약표용)
         document.addEventListener("change", function (e) {
           if (e.target.id === "summarySelectAllCheckbox") {
             const isChecked = e.target.checked;
-            const checkboxes = document.querySelectorAll(
+
+            // 개별 아이템 체크박스들
+            const itemCheckboxes = document.querySelectorAll(
               ".summary-item-checkbox"
             );
-            checkboxes.forEach((cb) => (cb.checked = isChecked));
+            itemCheckboxes.forEach((cb) => (cb.checked = isChecked));
+
+            // 공사코드 그룹 체크박스들
+            const groupCheckboxes = document.querySelectorAll(
+              ".cost-code-group-checkbox"
+            );
+            groupCheckboxes.forEach((cb) => (cb.checked = isChecked));
 
             // 선택된 GUID들 수집
-            const guids = Array.from(
-              document.querySelectorAll(".summary-item-checkbox:checked")
-            )
+            const guids = Array.from(itemCheckboxes)
+              .filter((cb) => cb.checked)
               .map((cb) => cb.value)
               .filter(Boolean);
 
@@ -992,28 +1408,15 @@
           }
         });
 
-        // 개별 체크박스
+        // 개별 아이템 체크박스
         document.addEventListener("change", function (e) {
           if (e.target.classList.contains("summary-item-checkbox")) {
-            const checkboxes = document.querySelectorAll(
-              ".summary-item-checkbox"
-            );
+            updateCheckboxStates();
+
+            // 뷰어와 테이블 동기화
             const checkedBoxes = document.querySelectorAll(
               ".summary-item-checkbox:checked"
             );
-
-            // 전체 선택 체크박스 상태 업데이트
-            const selectAllBox = document.getElementById(
-              "summarySelectAllCheckbox"
-            );
-            if (selectAllBox) {
-              selectAllBox.checked = checkedBoxes.length === checkboxes.length;
-              selectAllBox.indeterminate =
-                checkedBoxes.length > 0 &&
-                checkedBoxes.length < checkboxes.length;
-            }
-
-            // 뷰어와 테이블 동기화
             const guids = Array.from(checkedBoxes)
               .map((cb) => cb.value)
               .filter(Boolean);
@@ -1021,6 +1424,52 @@
             if (window.ifcViewer) {
               window.ifcViewer.setSelection(guids);
             }
+          }
+        });
+
+        // 공사코드 그룹 체크박스는 이미 renderCostCodeGroup에서 처리됨
+      }
+
+      // 체크박스 상태 업데이트 (전체선택, 그룹선택 상태 동기화)
+      function updateCheckboxStates() {
+        const itemCheckboxes = document.querySelectorAll(
+          ".summary-item-checkbox"
+        );
+        const checkedItems = document.querySelectorAll(
+          ".summary-item-checkbox:checked"
+        );
+        const groupCheckboxes = document.querySelectorAll(
+          ".cost-code-group-checkbox"
+        );
+
+        // 전체 선택 체크박스 상태
+        const selectAllBox = document.getElementById(
+          "summarySelectAllCheckbox"
+        );
+        if (selectAllBox) {
+          selectAllBox.checked =
+            itemCheckboxes.length > 0 &&
+            checkedItems.length === itemCheckboxes.length;
+          selectAllBox.indeterminate =
+            checkedItems.length > 0 &&
+            checkedItems.length < itemCheckboxes.length;
+        }
+
+        // 각 그룹의 체크박스 상태 업데이트
+        groupCheckboxes.forEach((groupCb) => {
+          const costCode = groupCb.dataset.costCode;
+          const groupItems = document.querySelectorAll(
+            `tr[data-parent-code="${costCode}"] .summary-item-checkbox`
+          );
+          const checkedGroupItems = document.querySelectorAll(
+            `tr[data-parent-code="${costCode}"] .summary-item-checkbox:checked`
+          );
+
+          if (groupItems.length > 0) {
+            groupCb.checked = checkedGroupItems.length === groupItems.length;
+            groupCb.indeterminate =
+              checkedGroupItems.length > 0 &&
+              checkedGroupItems.length < groupItems.length;
           }
         });
       }
@@ -3302,7 +3751,121 @@
         text-align: center;
       }
 
-      /* 새로운 공종별 내역서 필드 선택 스타일 */
+      /* 접었다/펼쳤다 기능 스타일 */
+      .collapsible-section {
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background: #fff;
+      }
+
+      .collapsible-header {
+        padding: 10px 15px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #ddd;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 14px;
+        color: #495057;
+      }
+
+      .collapsible-header:hover {
+        background: #e9ecef;
+      }
+
+      .toggle-icon {
+        font-family: monospace;
+        font-size: 16px;
+        font-weight: bold;
+        color: #007bff;
+      }
+
+      .collapsible-content {
+        padding: 15px;
+        display: block;
+      }
+
+      /* 공사코드 그룹핑 스타일 */
+      .cost-code-group-header {
+        background: #f8f9fa !important;
+        font-weight: bold;
+        border-left: 4px solid #007bff;
+      }
+
+      .cost-code-group-header:hover {
+        background: #e9ecef !important;
+        cursor: pointer;
+      }
+
+      .cost-code-group-header.selected-main {
+        background: #fff3cd !important;
+        border-left-color: #ffc107;
+      }
+
+      .cost-code-detail-row {
+        background: #fdfdfd;
+        border-left: 4px solid #dee2e6;
+      }
+
+      .cost-code-detail-row:hover {
+        background: #f8f9fa;
+      }
+
+      .cost-code-detail-row.selected-main {
+        background: #ffe8a1 !important;
+        border-left-color: #ffc107;
+      }
+
+      .toggle-cell {
+        width: 30px !important;
+        padding: 2px !important;
+        text-align: center;
+        vertical-align: middle;
+      }
+
+      .cost-code-toggle-btn {
+        width: 20px;
+        height: 20px;
+        border: 1px solid #007bff;
+        background: #fff;
+        color: #007bff;
+        cursor: pointer;
+        border-radius: 3px;
+        font-size: 12px;
+        font-weight: bold;
+        line-height: 1;
+        padding: 0;
+      }
+
+      .cost-code-toggle-btn:hover {
+        background: #007bff;
+        color: #fff;
+      }
+
+      .detail-indent {
+        width: 30px !important;
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+      }
+
+      .group-data-cell {
+        font-weight: 500;
+      }
+
+      .detail-data-cell {
+        font-size: 10px;
+        color: #6c757d;
+      }
+
+      .cost-code-group-checkbox {
+        transform: scale(1.1);
+        accent-color: #007bff;
+      }
+
+      /* 기존 스타일들... */
       .summary-field-selector {
         margin: 10px 0;
         padding: 10px;
