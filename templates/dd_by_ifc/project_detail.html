@@ -105,6 +105,8 @@
           <table id="summaryTable" class="table table-bordered aibim-table">
             <thead>
               <tr>
+                <th style="width: 24px"></th>
+                <!-- ← 추가: 펼치기 버튼용 -->
                 <th>공사코드</th>
                 <th>공종</th>
                 <th>명칭</th>
@@ -288,6 +290,11 @@
       let isSyncingFromTable = false;
       const selectedGuids = new Set(); // 현재 선택된 GUID들
       let lastClickedRowIdx = -1; // shift 범위 선택용
+
+      // ==== Summary expandable globals ====
+      let codeToObjects = new Map(); // code -> [objectData...]
+      let expandedCodes = new Set(); // 펼쳐진 공사코드들
+      let latestSummaryData = []; // 마지막으로 받은 summary_data 원본 저장
 
       // 공통 util (전역 노출)
       function applyTableSelectionStyles() {
@@ -478,8 +485,14 @@
       }
 
       // IFC 객체 데이터 로드 (API 경로 수정)
+      // 기존 함수를 이걸로 교체
       function loadIFCObjects() {
-        fetch(`/dd_by_ifc/api/ifc_objects/${PROJECT_ID}/`)
+        const url = `/dd_by_ifc/api/ifc_objects/${PROJECT_ID}/`;
+
+        return fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+        })
           .then((response) => {
             if (!response.ok) {
               throw new Error(
@@ -489,16 +502,65 @@
             return response.json();
           })
           .then((data) => {
+            // 기본 응답 검증
+            if (!data || !Array.isArray(data.objects)) {
+              throw new Error("서버 응답 형식이 올바르지 않습니다.");
+            }
+
+            // 이전 선택 상태 보존
+            const prevSelected = new Set(window.selectedGuids || []);
+
+            // 전역 데이터 세팅
             objectData = data.objects;
-            headers = data.headers;
+            headers = data.headers || [];
+
+            // 코드 ↔ 객체 매핑 갱신 (요약표 하위 펼치기용)
+            if (typeof buildCodeToObjectsMap === "function") {
+              buildCodeToObjectsMap();
+            }
+
+            // UI 갱신
             updateGroupComboBoxes();
             updateColumnSelector();
             updateGroupedTable();
-            console.log(`✅ IFC 객체 로드 완료: ${data.total_count}개`);
+
+            // 선택 유지 & 스타일 반영
+            if (prevSelected.size) {
+              window.selectRowsByGuids
+                ? window.selectRowsByGuids(Array.from(prevSelected))
+                : (window.selectedGuids = prevSelected);
+              if (typeof applyTableSelectionStyles === "function") {
+                applyTableSelectionStyles();
+              }
+            }
+
+            console.log(
+              `✅ IFC 객체 로드 완료: ${
+                data.total_count ?? objectData.length
+              }개`
+            );
+
+            // 이미 상세 선택 중이면 다시 로드
+            if (
+              Array.isArray(selectedObjectIds) &&
+              selectedObjectIds.length > 0
+            ) {
+              setTimeout(() => {
+                if (typeof loadObjectDetails === "function")
+                  loadObjectDetails();
+              }, 0);
+            }
+
+            return data; // Promise 체이닝용
           })
           .catch((error) => {
             console.error("❌ IFC 객체 로드 실패:", error);
+            // 알림 함수가 있으면 사용
+            if (typeof showNotification === "function") {
+              showNotification(`IFC 객체 로드 실패: ${error.message}`, "error");
+            }
             alert("IFC 객체를 로드하는데 실패했습니다: " + error.message);
+            throw error; // 상위로 에러 전달
           });
       }
 
@@ -514,6 +576,8 @@
             return response.json();
           })
           .then((data) => {
+            latestSummaryData = data.summary_data; // ★ 저장
+
             updateSummaryTableDisplay(data.summary_data);
             document.getElementById("summaryTotalLabel").textContent =
               "요약 총 금액: " + data.total_sum.toLocaleString("ko-KR") + " 원";
@@ -1519,46 +1583,207 @@
           });
       }
 
-      // summaryTable 표시 업데이트 (14컬럼)
+      /* ======================================================================
+   공사코드별 객체 펼치기 – Summary Table 확장판
+   - 기존 updateSummaryTableDisplay() 교체
+   - codeToObjects / expandedCodes / latestSummaryData 사용
+   - nested table 클릭 시 3D/IFC테이블 동기화
+====================================================================== */
+
+      // 코스트코드 ↔ 객체 매핑 생성
+      function buildCodeToObjectsMap() {
+        codeToObjects.clear();
+        if (!Array.isArray(objectData)) return;
+
+        objectData.forEach((obj) => {
+          let s =
+            obj.CostItems || (obj.Properties && obj.Properties.CostItems) || "";
+          if (!s) return;
+          const codes = s
+            .split("+")
+            .map((c) => c.trim())
+            .filter(Boolean);
+          codes.forEach((code) => {
+            if (!codeToObjects.has(code)) codeToObjects.set(code, []);
+            codeToObjects.get(code).push(obj);
+          });
+        });
+      }
+
+      // 요약표 UI 갱신
       function updateSummaryTableDisplay(summaryData) {
-        const tbody = document.querySelector("#summaryTable tbody");
+        const tbody = document.getElementById("summaryTableBody");
+        if (!tbody) return;
         tbody.innerHTML = "";
 
         summaryData.forEach((item) => {
-          const row = document.createElement("tr");
-
           if (item.type === "group") {
-            row.className = "group-header";
-            row.style.backgroundColor = "#f0f0f0";
-            row.style.fontWeight = "bold";
+            const tr = document.createElement("tr");
+            tr.className = "group-header";
 
-            const cell = document.createElement("td");
-            cell.colSpan = 14; // 14개 컬럼
-            cell.textContent = `▼ 공종: ${
-              item.group
-            } (총금액: ${item.total.toLocaleString("ko-KR")} 원)`;
-            row.appendChild(cell);
-          } else {
-            row.innerHTML = `
-        <td>${item.code || ""}</td>
-        <td>${item.category || ""}</td>
-        <td>${item.name || ""}</td>
-        <td>${item.specification || ""}</td>
-        <td>${item.unit || ""}</td>
-        <td>${formatNumber(item.quantity)}</td>
-        <td>${formatNumber(item.material_unit_price)}</td>
-        <td>${formatNumber(item.material_amount)}</td>
-        <td>${formatNumber(item.labor_unit_price)}</td>
-        <td>${formatNumber(item.labor_amount)}</td>
-        <td>${formatNumber(item.expense_unit_price)}</td>
-        <td>${formatNumber(item.expense_amount)}</td>
-        <td>${formatNumber(item.total_unit_price)}</td>
-        <td>${formatNumber(item.total_amount)}</td>
-      `;
+            const td = document.createElement("td");
+            td.colSpan = 15; // 14컬럼 + expander col
+            td.textContent = `▼ 공종: ${item.group} (총금액: ${formatNumber(
+              item.total
+            )} 원)`;
+            tr.appendChild(td);
+
+            tbody.appendChild(tr);
+            return;
           }
-          tbody.appendChild(row);
+
+          // 일반 코드 행
+          const tr = document.createElement("tr");
+          tr.dataset.code = item.code || "";
+          tr.className = "summary-code-row";
+
+          // 펼치기 버튼 셀
+          const tdBtn = document.createElement("td");
+          tdBtn.className = "expander-col";
+          const btn = document.createElement("button");
+          btn.className = "summary-expander-btn";
+          btn.dataset.code = item.code || "";
+          btn.textContent = expandedCodes.has(item.code) ? "−" : "+";
+          tdBtn.appendChild(btn);
+          tr.appendChild(tdBtn);
+
+          // 나머지 데이터 셀들
+          tr.innerHTML += `
+      <td>${item.code || ""}</td>
+      <td>${item.category || ""}</td>
+      <td>${item.name || ""}</td>
+      <td>${item.specification || ""}</td>
+      <td>${item.unit || ""}</td>
+      <td>${formatNumber(item.quantity)}</td>
+      <td>${formatNumber(item.material_unit_price)}</td>
+      <td>${formatNumber(item.material_amount)}</td>
+      <td>${formatNumber(item.labor_unit_price)}</td>
+      <td>${formatNumber(item.labor_amount)}</td>
+      <td>${formatNumber(item.expense_unit_price)}</td>
+      <td>${formatNumber(item.expense_amount)}</td>
+      <td>${formatNumber(item.total_unit_price)}</td>
+      <td>${formatNumber(item.total_amount)}</td>
+    `;
+
+          tbody.appendChild(tr);
+
+          // 펼쳐진 상태면 하위(객체) 테이블 렌더링
+          if (expandedCodes.has(item.code)) {
+            const childTr = document.createElement("tr");
+            childTr.className = "summary-child-row";
+            childTr.dataset.code = item.code;
+
+            const td = document.createElement("td");
+            td.colSpan = 15;
+
+            const wrapper = document.createElement("div");
+            wrapper.className = "summary-child-wrapper";
+            wrapper.appendChild(createNestedObjectTable(item.code));
+
+            td.appendChild(wrapper);
+            childTr.appendChild(td);
+            tbody.appendChild(childTr);
+          }
         });
       }
+
+      // 하위 객체테이블 생성
+      function createNestedObjectTable(code) {
+        const objs = codeToObjects.get(code) || [];
+        // 표시할 컬럼(기본은 visibleHeaders, 없으면 일부 기본값)
+        const cols =
+          visibleHeaders && visibleHeaders.length
+            ? visibleHeaders
+            : [
+                "GlobalId",
+                "Name",
+                "IfcClass",
+                "SpatialContainer",
+                "총금액",
+                "CostItems",
+              ];
+
+        const table = document.createElement("table");
+        table.className = "summary-child-table";
+        table.dataset.code = code;
+
+        const thead = document.createElement("thead");
+        const hr = document.createElement("tr");
+        cols.forEach((h) => {
+          const th = document.createElement("th");
+          th.textContent = h.split(".").pop();
+          hr.appendChild(th);
+        });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        objs.forEach((obj) => {
+          const tr = document.createElement("tr");
+          const guid =
+            obj.GlobalId || obj.globalId || obj.GUID || obj.Guid || "";
+          tr.dataset.guid = guid;
+
+          cols.forEach((h) => {
+            let v = obj[h];
+            if (
+              v === undefined &&
+              obj.Quantities &&
+              obj.Quantities[h] !== undefined
+            )
+              v = obj.Quantities[h];
+            if (
+              v === undefined &&
+              obj.Properties &&
+              obj.Properties[h] !== undefined
+            )
+              v = obj.Properties[h];
+
+            if (typeof v === "number") {
+              v = formatNumber(v);
+            }
+            const td = document.createElement("td");
+            td.textContent = v ?? "";
+            tr.appendChild(td);
+          });
+
+          // 클릭 → 선택 동기화
+          tr.addEventListener("click", () => {
+            // viewer & table sync
+            if (guid) {
+              // main table + viewer
+              selectRowsByGuids([guid]);
+              if (window.ifcViewer) {
+                window.ifcViewer.setSelection([guid]);
+              }
+              // nested table 선택 스타일
+              tbody
+                .querySelectorAll("tr")
+                .forEach((r) => r.classList.remove("selected-row"));
+              tr.classList.add("selected-row");
+            }
+          });
+
+          tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        return table;
+      }
+
+      // 요약표 토글 이벤트(Delegation)
+      document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".summary-expander-btn");
+        if (!btn) return;
+        const code = btn.dataset.code;
+        if (!code) return;
+
+        if (expandedCodes.has(code)) expandedCodes.delete(code);
+        else expandedCodes.add(code);
+
+        // 다시 렌더링
+        updateSummaryTableDisplay(latestSummaryData);
+      });
 
       // 숫자 콤마/소수점 포맷 유틸
       function formatNumber(val) {
@@ -2563,6 +2788,49 @@
       .object-row.selected-row,
       .aibim-table tbody tr.object-row.selected-row {
         background: #ffe8a1 !important;
+      }
+      /* ─── Summary expandable rows ───────────────────────────── */
+      .summary-expander-btn {
+        cursor: pointer;
+        border: none;
+        background: none;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0;
+      }
+      .summary-child-row {
+        background: #fafafa;
+      }
+      .summary-child-wrapper {
+        padding: 6px 10px 10px 10px;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        max-height: 260px;
+        overflow: auto;
+      }
+      .summary-child-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 10px;
+        min-width: 900px;
+      }
+      .summary-child-table th,
+      .summary-child-table td {
+        border: 1px solid #ccc;
+        padding: 3px 4px;
+        white-space: nowrap;
+      }
+      .summary-child-table tbody tr:hover {
+        background: #e8f4fd;
+        cursor: pointer;
+      }
+      .summary-child-table tbody tr.selected-row {
+        background: #ffe8a1 !important;
+      }
+      .expander-col {
+        width: 24px;
+        text-align: center;
       }
     </style>
   </body>
