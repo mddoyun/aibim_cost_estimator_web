@@ -1480,13 +1480,22 @@
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
 
+      /* ★★★ 여기부터 추가/수정 – Z축을 위로 고정 & 모델 루트 그룹 생성 ★★★ */
+      THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1); // three 기본업을 Z로
+      camera.up.set(0, 0, 1); // 카메라 업벡터도 Z로
+      controls.object.up.set(0, 0, 1); // 컨트롤 대상 업벡터
+      controls.update();
+
+      const MODEL_ROOT = new THREE.Group(); // 모델 담을 루트
+      scene.add(MODEL_ROOT);
+      /* ★★★ 여기까지 ★★★ */
+
       scene.add(new THREE.AmbientLight(0xffffff, 0.8));
       const dir = new THREE.DirectionalLight(0xffffff, 0.8);
       dir.position.set(10, 10, 10);
       scene.add(dir);
 
       camera.position.set(10, 10, 10);
-      THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
 
       // IFC 로드 및 표시
       const IFC_URL = "{{ ifc_abs_url }}";
@@ -1599,7 +1608,9 @@
                     .transpose();
                   mesh.matrixAutoUpdate = false;
                   mesh.matrix = mat4;
-                  scene.add(mesh);
+
+                  /* ★★★ 여기 수정 – scene 대신 MODEL_ROOT에 추가 ★★★ */
+                  MODEL_ROOT.add(mesh);
                 });
               }
 
@@ -1607,15 +1618,18 @@
             }
           }
 
+          // 필요 시 모델이 누워있으면 아래 각도 조정 (90° 회전)
+          // MODEL_ROOT.rotation.x = Math.PI / 2;   // 눕혀 있으면 주석 해제해서 테스트
+          // MODEL_ROOT.rotation.y = Math.PI / 2;   // 방향이 다르면 이걸 시도
+
           zoomToFit();
           animate();
         } catch (error) {
           console.error("3D 뷰어 로드 실패:", error);
-          // 기본 박스 표시
           const geometry = new THREE.BoxGeometry(2, 2, 2);
           const material = new THREE.MeshLambertMaterial({ color: 0x888888 });
           const cube = new THREE.Mesh(geometry, material);
-          scene.add(cube);
+          MODEL_ROOT.add(cube);
 
           camera.position.set(5, 5, 5);
           camera.lookAt(0, 0, 0);
@@ -1624,7 +1638,8 @@
       })();
 
       function zoomToFit() {
-        const box = new THREE.Box3().setFromObject(scene);
+        /* ★★★ MODEL_ROOT 기준으로 박스 계산 ★★★ */
+        const box = new THREE.Box3().setFromObject(MODEL_ROOT);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3()).length();
         const dist = size * 1.5;
