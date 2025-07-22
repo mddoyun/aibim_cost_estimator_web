@@ -99,22 +99,29 @@
     <div class="container" id="first_container">
       <div id="result_container">
         <div style="font-weight: bold">공종별 내역서</div>
-        <table class="summary-table" id="summaryTable">
-          <thead>
-            <tr>
-              <th>공사코드</th>
-              <th>공종</th>
-              <th>명칭</th>
-              <th>규격</th>
-              <th>단위</th>
-              <th>수량</th>
-              <th>재료비</th>
-              <th>노무비</th>
-              <th>총금액</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+        <div style="overflow-x: auto">
+          <table id="summaryTable" class="table table-bordered summary-table">
+            <thead>
+              <tr>
+                <th>공사코드</th>
+                <th>공종</th>
+                <th>명칭</th>
+                <th>규격</th>
+                <th>단위</th>
+                <th>수량</th>
+                <th>재료비단가</th>
+                <th>재료비</th>
+                <th>노무비단가</th>
+                <th>노무비</th>
+                <th>경비단가</th>
+                <th>경비</th>
+                <th>합계단가</th>
+                <th>총금액</th>
+              </tr>
+            </thead>
+            <tbody id="summaryTableBody"></tbody>
+          </table>
+        </div>
         <div class="summary-total-label" id="summaryTotalLabel">
           요약 총 금액: 0 원
         </div>
@@ -1274,7 +1281,7 @@
           });
       }
 
-      // 요약 테이블 표시 업데이트
+      // summaryTable 표시 업데이트 (14컬럼)
       function updateSummaryTableDisplay(summaryData) {
         const tbody = document.querySelector("#summaryTable tbody");
         tbody.innerHTML = "";
@@ -1288,30 +1295,42 @@
             row.style.fontWeight = "bold";
 
             const cell = document.createElement("td");
-            cell.colSpan = 9;
+            cell.colSpan = 14; // 14개 컬럼
             cell.textContent = `▼ 공종: ${
               item.group
             } (총금액: ${item.total.toLocaleString("ko-KR")} 원)`;
             row.appendChild(cell);
           } else {
-            // 개별 항목
             row.innerHTML = `
-              <td>${item.code}</td>
-              <td>${item.category}</td>
-              <td>${item.name}</td>
-              <td>${item.specification}</td>
-              <td>${item.unit}</td>
-              <td>${item.quantity.toLocaleString("ko-KR", {
-                maximumFractionDigits: 2,
-              })}</td>
-              <td>${item.material_amount.toLocaleString("ko-KR")}</td>
-              <td>${item.labor_amount.toLocaleString("ko-KR")}</td>
-              <td>${item.total_amount.toLocaleString("ko-KR")}</td>
-            `;
+        <td>${item.code || ""}</td>
+        <td>${item.category || ""}</td>
+        <td>${item.name || ""}</td>
+        <td>${item.specification || ""}</td>
+        <td>${item.unit || ""}</td>
+        <td>${formatNumber(item.quantity)}</td>
+        <td>${formatNumber(item.material_unit_price)}</td>
+        <td>${formatNumber(item.material_amount)}</td>
+        <td>${formatNumber(item.labor_unit_price)}</td>
+        <td>${formatNumber(item.labor_amount)}</td>
+        <td>${formatNumber(item.expense_unit_price)}</td>
+        <td>${formatNumber(item.expense_amount)}</td>
+        <td>${formatNumber(item.total_unit_price)}</td>
+        <td>${formatNumber(item.total_amount)}</td>
+      `;
           }
-
           tbody.appendChild(row);
         });
+      }
+
+      // 숫자 콤마/소수점 포맷 유틸
+      function formatNumber(val) {
+        if (val === undefined || val === null || val === "") return "";
+        const num = Number(val);
+        if (isNaN(num)) return val;
+        if (Math.abs(num) < 1 && num !== 0) {
+          return num.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
+        }
+        return num.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
       }
 
       // IFC 저장 (다운로드) (수정된 API 경로)
@@ -1673,12 +1692,43 @@
       }
 
       .summary-table {
-        font-size: 11px;
+        width: max-content !important; /* 컬럼 길이만큼 확장 */
+        min-width: 1200px;
+        border-collapse: collapse;
+        font-size: 11px; /* 글씨 작게 */
+        white-space: nowrap; /* 줄바꿈 금지 */
+        background: white;
       }
       .summary-table th,
       .summary-table td {
-        padding: 3px 6px;
+        padding: 3px 8px;
+        border: 1px solid #ddd;
+        font-size: 11px; /* 글씨 작게 */
+        white-space: nowrap; /* 줄바꿈 금지 */
+        height: 24px;
+        vertical-align: middle;
+        text-align: left;
+      }
+      .summary-table th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+        font-size: 10px;
+      }
+      .summary-table tr:nth-child(even) {
+        background-color: #f9f9f9;
+      }
+      .summary-table tr.group-header {
+        background-color: #e0e0e0 !important;
+        font-weight: bold;
         font-size: 11px;
+      }
+      .summary-table tbody tr:hover {
+        background-color: #e8f4fd;
+        cursor: pointer;
+      }
+      .summary-table tbody tr.selected {
+        background-color: #007bff !important;
+        color: white;
       }
 
       .column-selector {

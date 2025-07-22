@@ -874,7 +874,12 @@ def get_summary_table(request, project_id):
         'material_amount': 0.0,
         'labor_amount': 0.0,
         'expense_amount': 0.0,
-        'total_amount': 0.0
+        'total_amount': 0.0,
+        # JS에서 요구하는 네 가지 단가 key를 명시적으로 초기화!
+        'material_unit_price': 0.0,
+        'labor_unit_price': 0.0,
+        'expense_unit_price': 0.0,
+        'total_unit_price': 0.0,
     }))
     
     total_sum = 0.0
@@ -909,6 +914,7 @@ def get_summary_table(request, project_id):
                 group = cost_code.category or "기타"
                 item = grouped[group][code]
                 
+                # 네 가지 단가 컬럼을 모두 채워서 내려준다!
                 item.update({
                     'code': code,
                     'category': group,
@@ -919,6 +925,10 @@ def get_summary_table(request, project_id):
                     'labor_unit': lab_unit,
                     'expense_unit': exp_unit,
                     'total_unit': total_unit,
+                    'material_unit_price': mat_unit,
+                    'labor_unit_price': lab_unit,
+                    'expense_unit_price': exp_unit,
+                    'total_unit_price': total_unit,
                 })
                 
                 item['quantity'] += quantity
@@ -955,7 +965,6 @@ def get_summary_table(request, project_id):
         'summary_data': summary_data,
         'total_sum': total_sum
     })
-
 
 @csrf_exempt
 @require_http_methods(["POST"])
