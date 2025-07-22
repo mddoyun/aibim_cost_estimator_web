@@ -1351,67 +1351,64 @@
         // 상세 정보 로드 (항상 호출하여 선택 해제도 처리)
         loadObjectDetails();
       }
-      // IFC 저장 (다운로드) 개선 - 새 파일 생성 방식
+
+      // ✅ IFC 저장 클릭 핸들러 단일화 (중복 제거 & 404시 구버전 API로 폴백)
       document
         .getElementById("saveIFCBtn")
-        .addEventListener("click", function () {
-          if (
-            confirm(
-              "공사코드가 반영된 새로운 IFC 파일을 생성하여 다운로드하시겠습니까?\n(파일 생성에 시간이 걸릴 수 있습니다)"
-            )
-          ) {
-            const btn = this;
-            const originalText = btn.textContent;
+        .addEventListener("click", handleIFCDownload);
 
-            btn.disabled = true;
-            btn.innerHTML = `
-      <div class="spinner-border spinner-border-sm" role="status"></div>
-      새 IFC 파일 생성 중... 잠시만 기다려주세요
-    `;
+      async function handleIFCDownload() {
+        if (
+          !confirm(
+            "공사코드가 반영된 새로운 IFC 파일을 생성하여 다운로드하시겠습니까?\n(파일 생성에 시간이 걸릴 수 있습니다)"
+          )
+        )
+          return;
 
-            // 새로운 API 엔드포인트 호출
-            const downloadUrl = `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`;
+        const btn = this;
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.innerHTML = `
+          <div class="spinner-border spinner-border-sm" role="status"></div>
+          새 IFC 파일 생성 중... 잠시만 기다려주세요
+        `;
 
-            // fetch로 다운로드 상태 확인
-            fetch(downloadUrl)
-              .then((response) => {
-                if (!response.ok) {
-                  return response.json().then((data) => {
-                    throw new Error(data.error || "파일 생성 실패");
-                  });
-                }
+        const newUrl = `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`;
+        const oldUrl = `/dd_by_ifc/api/download_ifc/${PROJECT_ID}/`;
 
-                // 성공적으로 받으면 파일 다운로드
-                return response.blob();
-              })
-              .then((blob) => {
-                // Blob을 파일로 다운로드
-                const url = window.URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = `${PROJECT_ID}_with_costcodes.ifc`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
-
-                // 성공 메시지
-                alert(
-                  "✅ 공사코드가 반영된 새로운 IFC 파일이 다운로드되었습니다!"
-                );
-              })
-              .catch((error) => {
-                console.error("❌ IFC 파일 생성 실패:", error);
-                alert(`❌ IFC 파일 생성 실패: ${error.message}`);
-              })
-              .finally(() => {
-                // 버튼 복원
-                btn.disabled = false;
-                btn.innerHTML = originalText;
+        try {
+          const blob = await fetch(newUrl).then(async (res) => {
+            if (res.ok) return res.blob();
+            // 새 엔드포인트 실패 시 기존 API로 폴백
+            if (res.status === 404) {
+              const oldBlob = await fetch(oldUrl).then((r) => {
+                if (!r.ok) throw new Error("기존 API도 실패했습니다.");
+                return r.blob();
               });
-          }
-        });
+              return oldBlob;
+            }
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+          });
 
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${PROJECT_ID}_with_costcodes.ifc`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+          alert("✅ 공사코드가 반영된 IFC 파일이 다운로드되었습니다!");
+        } catch (err) {
+          console.error("❌ IFC 파일 생성/다운로드 실패:", err);
+          alert(`❌ IFC 파일 생성/다운로드 실패: ${err.message}`);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      }
+      ㄹ;
       // 전체 선택 토글
       function toggleSelectAll() {
         const selectAll = document.getElementById("selectAllCheckbox").checked;
