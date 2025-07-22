@@ -1508,36 +1508,6 @@
       }
     </script>
 
-    <!-- 로딩 스피너 HTML (3D 뷰어 컨테이너 안에 추가) -->
-    <div
-      id="viewer-loading"
-      style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 1000;
-        text-align: center;
-        background: rgba(255, 255, 255, 0.9);
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      "
-    >
-      <div
-        style="
-          width: 40px;
-          height: 40px;
-          border: 4px solid #f3f3f3;
-          border-top: 4px solid #667eea;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin: 0 auto 10px;
-        "
-      ></div>
-      <div style="color: #495057; font-weight: 600">모델 로딩중...</div>
-    </div>
-
     <style>
       @keyframes spin {
         0% {
@@ -1548,36 +1518,6 @@
         }
       }
     </style>
-
-    <!-- 로딩 스피너 HTML (3D 뷰어 컨테이너 안에 추가) -->
-    <div
-      id="viewer-loading"
-      style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 1000;
-        text-align: center;
-        background: rgba(255, 255, 255, 0.9);
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      "
-    >
-      <div
-        style="
-          width: 40px;
-          height: 40px;
-          border: 4px solid #f3f3f3;
-          border-top: 4px solid #667eea;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin: 0 auto 10px;
-        "
-      ></div>
-      <div style="color: #495057; font-weight: 600">모델 로딩중...</div>
-    </div>
 
     <style>
       @keyframes spin {
@@ -2803,34 +2743,25 @@
           this.updateMousePosition(event);
           this.raycaster.setFromCamera(this.mouse, this.camera);
 
-          const intersects = this.raycaster.intersectObjects(
+          const hits = this.raycaster.intersectObjects(
             this.modelGroup.children,
             true
           );
-          if (intersects.length > 0) {
-            const clickedObject = intersects[0].object;
-
-            let targetGroup = clickedObject;
-            while (
-              targetGroup.parent &&
-              targetGroup.parent !== this.modelGroup
-            ) {
-              targetGroup = targetGroup.parent;
-            }
-
-            this.selectObject(targetGroup, intersects[0].point);
-            console.log(
-              "🎯 클릭된 객체:",
-              clickedObject.type,
-              "최상위 그룹:",
-              targetGroup.type
-            );
-          } else {
+          // ★ Mesh만 찾아서 사용
+          const hit = hits.find((h) => h.object.type !== "LineSegments");
+          if (!hit) {
             this.clearSelection();
+            return;
           }
+
+          let targetGroup = hit.object;
+          while (targetGroup.parent && targetGroup.parent !== this.modelGroup) {
+            targetGroup = targetGroup.parent;
+          }
+          this.selectObject(targetGroup, hit.point);
         }
 
-        selectObject(object, intersectionPoint) {
+        selectObject(object) {
           this.clearSelection();
           this.selectedObject = object;
 
@@ -2838,26 +2769,19 @@
           if (object.type === "Group" && object.children.length > 0) {
             meshToHighlight = object.children[0];
           }
-
           this.originalMaterial = meshToHighlight.material;
           meshToHighlight.material = this.highlightMaterial;
 
-          // ★ 선택 통지 콜백 호출
           const guid =
             object?.userData?.ifcGuid ||
             object?.userData?.GlobalId ||
             object?.userData?.globalId;
           if (guid && typeof this.onObjectSelected === "function") {
-            // 루프 방지 플래그
-            isSyncingFromViewer = true;
-            try {
-              this.onObjectSelected(guid);
-            } finally {
-              // 약간 지연 후 플래그 해제(중첩 호출 방지)
-              setTimeout(() => (isSyncingFromViewer = false), 0);
-            }
+            // ★ 플래그 건들지 말 것!
+            this.onObjectSelected(guid);
           }
         }
+
         selectByGuid(guid) {
           const obj = this.guidToObject.get(guid);
           if (!obj) return false;
@@ -3032,7 +2956,7 @@
 
       // ★ 뷰어 → 테이블 동기화
       viewer.onObjectSelected = (guid) => {
-        if (isSyncingFromViewer) return;
+        if (isSyncingFromViewer) return; // 테이블에서 올라온 호출이면 무시
         selectTableRowByGuid(guid); // 스크롤 없음
       };
 
