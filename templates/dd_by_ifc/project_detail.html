@@ -861,23 +861,31 @@
       let summaryAllFields = []; // 요약표에서 사용 가능한 모든 필드들
 
       // 기본 표시할 필드들 정의 (토글 컬럼은 별도 처리)
-      const DEFAULT_SUMMARY_FIELDS = [
-        "CostCode", // 공사코드
-        "공종", // 공사코드 속성
-        "명칭", // 공사코드 속성
-        "규격", // 공사코드 속성
-        "단위", // 공사코드 속성
+      // === 기본 노출 필드 정의 (첫 칸은 내부용 더미 'CostCode') ===
+      const FIELD_ALIAS = { 품명: "명칭" }; // 요청하신 '품명' -> 실제 필드 '명칭' 매핑
+      const SUMMARY_DEFAULTS_RAW = [
+        "CostCode", // 첫 칸은 내부용(헤더 출력시 slice(1)로 빠짐) - 절대 지우지 마세요
+        "공종",
+        "품명", // 실제론 '명칭'을 표시함
+        "규격",
+        "단위",
         "수량",
         "재료비단가",
+        "재료비",
         "노무비단가",
+        "노무비",
         "경비단가",
+        "경비",
         "합계단가",
         "총금액",
-        "GlobalId",
-        "Name",
-        "IfcClass",
-        "SpatialContainer",
       ];
+
+      // 실제 존재하는 컬럼만 걸러서 반환
+      function resolveDefaultFields() {
+        return SUMMARY_DEFAULTS_RAW.map((f) => FIELD_ALIAS[f] || f).filter(
+          (f) => summaryAllFields.includes(f)
+        );
+      }
 
       // ==== Viewer <-> Table Sync State ====
       const guidToRow = new Map(); // guid -> <tr>
@@ -1032,9 +1040,7 @@
 
         // 기본 표시 필드 설정 (처음 생성시에만)
         if (summaryVisibleFields.length === 0) {
-          summaryVisibleFields = DEFAULT_SUMMARY_FIELDS.filter((field) =>
-            summaryAllFields.includes(field)
-          );
+          summaryVisibleFields = resolveDefaultFields();
         }
 
         console.log(`✅ 조합 항목 생성 완료: ${combinedItems.length}개`);
@@ -1208,11 +1214,9 @@
       }
 
       function resetDefaultSummaryFields() {
-        summaryVisibleFields = DEFAULT_SUMMARY_FIELDS.filter((field) =>
-          summaryAllFields.includes(field)
-        );
+        summaryVisibleFields = resolveDefaultFields();
 
-        // 체크박스 상태 업데이트
+        // 체크박스 상태 반영
         const checkboxes = document.querySelectorAll(
           "#summaryFieldCheckboxes input"
         );

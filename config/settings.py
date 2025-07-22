@@ -30,7 +30,7 @@ SECRET_KEY = 'django-insecure-^fkn_u&8jl50smtf7sr040d57rn98n%$^%67x(#o3ce1=2ylkb
 DEBUG = True
 
 # 개발용: 로컬호스트 및 루프백 허용
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
