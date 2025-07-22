@@ -282,6 +282,83 @@
       let headers = [];
       let visibleHeaders = []; // 표시할 헤더들
 
+      // ==== Viewer <-> Table Sync State ====
+      const guidToRow = new Map(); // guid -> <tr>
+      let isSyncingFromViewer = false;
+      let isSyncingFromTable = false;
+      const selectedGuids = new Set(); // 현재 선택된 GUID들
+      let lastClickedRowIdx = -1; // shift 범위 선택용
+
+      // 공통 util (전역 노출)
+      function applyTableSelectionStyles() {
+        document
+          .querySelectorAll("#ifcTablecontainer_ tr.object-row")
+          .forEach((tr) => {
+            if (selectedGuids.has(tr.dataset.guid))
+              tr.classList.add("selected-row");
+            else tr.classList.remove("selected-row");
+          });
+      }
+      function selectRowsByGuids(guidsArray) {
+        selectedGuids.clear();
+        guidsArray.forEach((g) => selectedGuids.add(g));
+        applyTableSelectionStyles();
+
+        // 체크박스 상태도 맞춤
+        document
+          .querySelectorAll("#ifcTablecontainer_ input.object-checkbox")
+          .forEach((cb) => {
+            cb.checked = selectedGuids.has(cb.value);
+          });
+
+        handleObjectSelection(); // 기존 로직(상세테이블 갱신 등) 재활용
+      }
+      function handleTableRowClick(e, guid, row) {
+        const idx = parseInt(row.dataset.idx, 10);
+        const additive = e.ctrlKey || e.metaKey; // 개별 토글
+        const range = e.shiftKey && lastClickedRowIdx >= 0; // 범위 선택
+
+        if (range) {
+          const rows = Array.from(
+            document.querySelectorAll("#ifcTablecontainer_ tr.object-row")
+          );
+          const [start, end] =
+            idx > lastClickedRowIdx
+              ? [lastClickedRowIdx, idx]
+              : [idx, lastClickedRowIdx];
+          for (let i = start; i <= end; i++)
+            selectedGuids.add(rows[i].dataset.guid);
+        } else {
+          if (!additive) selectedGuids.clear();
+          if (additive && selectedGuids.has(guid)) selectedGuids.delete(guid);
+          else selectedGuids.add(guid);
+        }
+        lastClickedRowIdx = idx;
+        applyTableSelectionStyles();
+
+        // 체크박스 싱크
+        const cb = row.querySelector("input.object-checkbox");
+        if (cb) cb.checked = selectedGuids.has(guid);
+
+        // 뷰어로 반영
+        if (window.ifcViewer && !isSyncingFromViewer) {
+          isSyncingFromTable = true;
+          window.ifcViewer.setSelection(Array.from(selectedGuids));
+          isSyncingFromTable = false;
+        }
+
+        handleObjectSelection(); // 기존 상세 테이블 로직 호출
+      }
+
+      // 전역에 노출 (모듈 스크립트에서 호출)
+      window.selectRowsByGuids = selectRowsByGuids;
+      window.applyTableSelectionStyles = applyTableSelectionStyles;
+      window.isSyncingFromTable = isSyncingFromTable;
+      window.isSyncingFromViewer = isSyncingFromViewer;
+      window.selectedGuids = selectedGuids;
+      window.guidToRow = guidToRow;
+      window.handleTableRowClick = handleTableRowClick;
+
       // 페이지 로딩 시 안내 메시지 추가
       document.addEventListener("DOMContentLoaded", function () {
         // 기존 초기화 함수들
@@ -764,85 +841,215 @@
       }
 
       // 그룹화된 테이블 업데이트
+      // ────────────────────────────────────────────────────────────────
+      // 완성본: updateGroupedTable()
+      //  - 기준코드 스타일의 선택/동기화/그룹핑/헤더생성 모두 포함
+      //  - 외부에서 필요한 전역: objectData, headers, visibleHeaders,
+      //    collapsedGroups(Set), guidToRow(Map), selectedGuids(Set),
+      //    createObjectRow(obj, idx), applyTableSelectionStyles(),
+      //    handleObjectSelection(), toggleGroup(key)  (이미 있다면 그대로 사용)
+      // ────────────────────────────────────────────────────────────────
       function updateGroupedTable() {
         const container = document.getElementById("ifcTablecontainer_");
-        container.innerHTML = "";
+        if (!container) return;
 
-        // 그룹 기준 수집
+        // 초기화
+        container.innerHTML = "";
+        guidToRow.clear();
+
+        // 그룹 키 수집
         const groupKeys = [];
         for (let i = 1; i <= 3; i++) {
-          const value = document.getElementById("groupBy" + i).value;
-          if (value !== "없음") groupKeys.push(value);
+          const v = document.getElementById("groupBy" + i)?.value;
+          if (v && v !== "없음") groupKeys.push(v);
         }
 
-        // 테이블 생성
+        // visibleHeaders 기본값 보정
+        if (!Array.isArray(visibleHeaders) || visibleHeaders.length === 0) {
+          visibleHeaders = (headers || []).slice(0, 6); // 혹시 비어있으면 앞 6개 임시
+        }
+
+        // 테이블 골격
         const table = document.createElement("table");
         table.className = "table table-bordered aibim-table";
 
-        // 헤더
         const thead = document.createElement("thead");
         const headerRow = document.createElement("tr");
 
-        // 체크박스 헤더
-        const checkboxHeader = document.createElement("th");
-        checkboxHeader.innerHTML =
-          '<input type="checkbox" id="selectAllCheckbox">';
-        headerRow.appendChild(checkboxHeader);
+        // 전체선택 체크박스
+        const cbTh = document.createElement("th");
+        cbTh.innerHTML = '<input type="checkbox" id="selectAllCheckbox">';
+        headerRow.appendChild(cbTh);
 
-        // 보이는 헤더들만 표시
-        visibleHeaders.forEach((header) => {
+        // 데이터 헤더
+        visibleHeaders.forEach((h) => {
           const th = document.createElement("th");
-          th.textContent = header.split(".").pop(); // 마지막 부분만 표시
+          th.textContent = h.split(".").pop();
           headerRow.appendChild(th);
         });
+
         thead.appendChild(headerRow);
         table.appendChild(thead);
 
         const tbody = document.createElement("tbody");
-
-        if (groupKeys.length === 0) {
-          // 그룹화 없음 - 직접 표시
-          objectData.forEach((obj, index) => {
-            const row = createObjectRow(obj, index);
-            tbody.appendChild(row);
-          });
-        } else {
-          // 그룹화 적용
-          const groupedData = groupObjectsByKeys(objectData, groupKeys);
-          renderGroupedData(tbody, groupedData, 0, groupKeys);
-        }
-
         table.appendChild(tbody);
         container.appendChild(table);
 
-        // 전체 선택 체크박스 이벤트
-        document
-          .getElementById("selectAllCheckbox")
-          .addEventListener("change", toggleSelectAll);
+        // row index (shift 선택용)
+        let rowCounter = 0;
+
+        // ===== 내부 헬퍼들 =====
+        function renderGroup(tbody, groupedData, depth) {
+          Object.entries(groupedData).forEach(([groupValue, content]) => {
+            const groupKey = `${groupKeys[depth]}:${groupValue}`;
+            const isCollapsed = collapsedGroups.has(groupKey);
+            const symbol = isCollapsed ? "▶" : "▼";
+
+            // 그룹 헤더 행
+            const gRow = document.createElement("tr");
+            gRow.className = "group-header";
+            gRow.style.backgroundColor = "#f0f0f0";
+            gRow.style.fontWeight = "bold";
+            gRow.style.cursor = "pointer";
+
+            const gCell = document.createElement("td");
+            gCell.colSpan = visibleHeaders.length + 1; // +1 은 체크박스 열
+            gCell.textContent = `${" ".repeat(depth * 2)}${symbol} ${
+              groupKeys[depth]
+            }: ${groupValue}`;
+            gRow.appendChild(gCell);
+
+            gRow.addEventListener("click", () => toggleGroup(groupKey));
+            tbody.appendChild(gRow);
+
+            if (!isCollapsed) {
+              if (Array.isArray(content)) {
+                content.forEach((obj) => {
+                  const row = createObjectRow(obj, rowCounter++);
+                  tbody.appendChild(row);
+                });
+              } else {
+                renderGroup(tbody, content, depth + 1);
+              }
+            }
+          });
+        }
+
+        function groupObjectsByKeysLocal(objects, keys, depth = 0) {
+          if (depth >= keys.length) return objects;
+          const grouped = {};
+          const key = keys[depth];
+
+          objects.forEach((obj) => {
+            let v = obj[key];
+            if (v === undefined && obj.Quantities) v = obj.Quantities[key];
+            if (v === undefined && obj.Properties) v = obj.Properties[key];
+            if (v === undefined) v = "N/A";
+            if (!grouped[v]) grouped[v] = [];
+            grouped[v].push(obj);
+          });
+
+          Object.keys(grouped).forEach((k) => {
+            grouped[k] = groupObjectsByKeysLocal(grouped[k], keys, depth + 1);
+          });
+          return grouped;
+        }
+
+        // ===== 실제 렌더링 =====
+        if (groupKeys.length === 0) {
+          objectData.forEach((obj) => {
+            const row = createObjectRow(obj, rowCounter++);
+            tbody.appendChild(row);
+          });
+        } else {
+          const grouped = groupObjectsByKeysLocal(objectData, groupKeys);
+          renderGroup(tbody, grouped, 0);
+        }
+
+        // 전체선택 체크박스 이벤트
+        const selectAllBox = document.getElementById("selectAllCheckbox");
+        if (selectAllBox) {
+          selectAllBox.addEventListener("change", function () {
+            const check = this.checked;
+            document
+              .querySelectorAll("#ifcTablecontainer_ input.object-checkbox")
+              .forEach((cb) => {
+                cb.checked = check;
+                const guid = cb.value;
+                if (check) selectedGuids.add(guid);
+                else selectedGuids.delete(guid);
+              });
+
+            applyTableSelectionStyles();
+
+            // 뷰어에 반영
+            if (window.ifcViewer && !isSyncingFromViewer) {
+              isSyncingFromTable = true;
+              window.ifcViewer.setSelection(Array.from(selectedGuids));
+              isSyncingFromTable = false;
+            }
+
+            handleObjectSelection(); // 기존 상세테이블 갱신
+          });
+        }
+
+        // 기존 선택 상태 반영
+        applyTableSelectionStyles();
+
+        // 헤더 체크박스 indeterminate 처리
+        const allCbs = document.querySelectorAll(
+          "#ifcTablecontainer_ input.object-checkbox"
+        );
+        const selCbs = document.querySelectorAll(
+          "#ifcTablecontainer_ input.object-checkbox:checked"
+        );
+        if (selectAllBox) {
+          selectAllBox.checked =
+            allCbs.length > 0 && selCbs.length === allCbs.length;
+          selectAllBox.indeterminate =
+            selCbs.length > 0 && selCbs.length < allCbs.length;
+        }
       }
 
       // 객체 행 생성
       function createObjectRow(obj, index) {
         const row = document.createElement("tr");
-        row.dataset.globalId = obj.GlobalId;
         row.className = "object-row";
+        row.dataset.idx = index;
+
+        const guid = obj.GlobalId || obj.globalId || obj.GUID || obj.Guid || "";
+        row.dataset.guid = guid;
+        if (guid) guidToRow.set(guid, row);
 
         // 체크박스
         const checkboxCell = document.createElement("td");
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.value = obj.GlobalId;
+        checkbox.value = guid;
         checkbox.className = "object-checkbox";
-        checkbox.addEventListener("change", handleObjectSelection);
+        checkbox.addEventListener("change", () => {
+          // 체크박스만 클릭한 경우에도 selection sync
+          const additive = true; // 체크는 항상 add/remove
+          if (checkbox.checked) selectedGuids.add(guid);
+          else selectedGuids.delete(guid);
+
+          applyTableSelectionStyles();
+
+          if (window.ifcViewer && !isSyncingFromViewer) {
+            isSyncingFromTable = true;
+            window.ifcViewer.setSelection(Array.from(selectedGuids));
+            isSyncingFromTable = false;
+          }
+          handleObjectSelection();
+        });
         checkboxCell.appendChild(checkbox);
         row.appendChild(checkboxCell);
 
-        // 행 클릭 이벤트 (체크박스 토글)
-        row.addEventListener("click", function (e) {
-          if (e.target !== checkbox) {
-            checkbox.checked = !checkbox.checked;
-            handleObjectSelection();
-          }
+        // 행 클릭 시(체크박스 외) 선택 처리
+        row.addEventListener("click", (e) => {
+          if (e.target === checkbox) return;
+          if (!guid) return;
+          handleTableRowClick(e, guid, row);
         });
 
         // 보이는 헤더들만 데이터 셀 생성
@@ -858,17 +1065,13 @@
           }
 
           if (typeof value === "number") {
-            if (value % 1 === 0) {
-              value = value.toLocaleString("ko-KR");
-            } else {
-              value = value.toLocaleString("ko-KR", {
-                maximumFractionDigits: 3,
-              });
-            }
+            value =
+              value % 1 === 0
+                ? value.toLocaleString("ko-KR")
+                : value.toLocaleString("ko-KR", { maximumFractionDigits: 3 });
           }
-
-          cell.textContent = value || "";
-          cell.title = value || ""; // 툴팁
+          cell.textContent = value ?? "";
+          cell.title = value ?? "";
           row.appendChild(cell);
         });
 
@@ -902,13 +1105,18 @@
       }
 
       // 그룹화된 데이터 렌더링
-      function renderGroupedData(tbody, groupedData, depth, groupKeys) {
+      function renderGroupedData(
+        tbody,
+        groupedData,
+        depth,
+        groupKeys,
+        rowCounter
+      ) {
         Object.entries(groupedData).forEach(([groupValue, content]) => {
           const groupKey = `${groupKeys[depth]}:${groupValue}`;
           const isCollapsed = collapsedGroups.has(groupKey);
           const symbol = isCollapsed ? "▶" : "▼";
 
-          // 그룹 헤더 행
           const groupRow = document.createElement("tr");
           groupRow.className = "group-header";
           groupRow.style.backgroundColor = "#f0f0f0";
@@ -916,7 +1124,7 @@
           groupRow.style.cursor = "pointer";
 
           const groupCell = document.createElement("td");
-          groupCell.colSpan = visibleHeaders.length + 1; // 체크박스 포함
+          groupCell.colSpan = visibleHeaders.length + 1;
           groupCell.textContent = `${" ".repeat(depth * 2)}${symbol} ${
             groupKeys[depth]
           }: ${groupValue}`;
@@ -927,17 +1135,23 @@
 
           if (!isCollapsed) {
             if (Array.isArray(content)) {
-              content.forEach((obj, index) => {
-                const row = createObjectRow(obj, index);
+              content.forEach((obj) => {
+                const row = createObjectRow(obj, rowCounter++);
                 tbody.appendChild(row);
               });
             } else {
-              renderGroupedData(tbody, content, depth + 1, groupKeys);
+              rowCounter = renderGroupedData(
+                tbody,
+                content,
+                depth + 1,
+                groupKeys,
+                rowCounter
+              );
             }
           }
         });
+        return rowCounter;
       }
-
       // 그룹 토글
       function toggleGroup(groupKey) {
         if (collapsedGroups.has(groupKey)) {
@@ -1058,6 +1272,7 @@
         });
 
         handleObjectSelection();
+        applyTableSelectionStyles();
       }
 
       // loadObjectDetails 함수만 아래처럼 수정!
@@ -1368,89 +1583,575 @@
 
     <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
     <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
+    <!-- ─────────────────────────────  WASM 기반 IFC Viewer (기준코드 이식판) ───────────────────────────── -->
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-      const viewDiv = document.getElementById("viewer");
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(
-        60,
-        viewDiv.clientWidth / viewDiv.clientHeight,
-        0.1,
-        10000
-      );
-      const renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        alpha: true,
-      });
-      renderer.setSize(viewDiv.clientWidth, viewDiv.clientHeight);
-      viewDiv.appendChild(renderer.domElement);
+      /* ===================== 유틸: 혹시 남은 구형 스피너 제거 ===================== */
+      function hideLegacySpinners() {
+        document
+          .querySelectorAll("#viewer-loading")
+          .forEach((el) => el.remove());
+      }
 
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
+      /* ===================== IFCViewer3D 클래스 (기준코드 완전 이식) ===================== */
+      class IFCViewer3D {
+        constructor(containerId) {
+          this.container = document.getElementById(containerId);
+          this.loadingElement = null;
+          this.scene = null;
+          this.camera = null;
+          this.renderer = null;
+          this.controls = null;
+          this.modelGroup = null;
+          this.guidToObject = new Map();
+          this.selectionMap = new Map();
+          this.selectedGuids = new Set();
+          this.onSelectionChange = null;
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-      dir.position.set(10, 10, 10);
-      scene.add(dir);
+          this.raycaster = new THREE.Raycaster();
+          this.mouse = new THREE.Vector2();
+          this.isDragging = false;
 
-      // IFC는 Z-Up 좌표계이므로 카메라 설정을 맞춤
-      camera.position.set(10, 10, 10);
-      camera.up.set(0, 0, 1); // Z축을 위로
+          this.highlightMaterial = new THREE.MeshLambertMaterial({
+            color: 0xff6b35,
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide,
+          });
 
-      // Three.js 전역 설정
-      THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
+          this.init();
+        }
 
-      // Pyodide / IfcOpenShell 로 IFC 로드
+        init() {
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(0xf5f5f5);
+
+          const aspect =
+            this.container.clientWidth / this.container.clientHeight;
+          this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 5000);
+          this.camera.position.set(30, 25, 30);
+
+          this.renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: false,
+            powerPreference: "high-performance",
+          });
+          this.renderer.setSize(
+            this.container.clientWidth,
+            this.container.clientHeight
+          );
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+          this.renderer.shadowMap.enabled = true;
+          this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          this.renderer.toneMappingExposure = 1.0;
+          this.container.appendChild(this.renderer.domElement);
+
+          this.modelGroup = new THREE.Group();
+          this.scene.add(this.modelGroup);
+
+          this.setupLighting();
+          this.setupControls();
+          this.setupEventListeners();
+
+          this.animate();
+        }
+
+        setupLighting() {
+          const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+          this.scene.add(ambientLight);
+
+          const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+          directionalLight.position.set(50, 50, 25);
+          directionalLight.castShadow = true;
+          directionalLight.shadow.mapSize.width = 2048;
+          directionalLight.shadow.mapSize.height = 2048;
+          directionalLight.shadow.camera.near = 0.5;
+          directionalLight.shadow.camera.far = 200;
+          directionalLight.shadow.camera.left = -50;
+          directionalLight.shadow.camera.right = 50;
+          directionalLight.shadow.camera.top = 50;
+          directionalLight.shadow.camera.bottom = -50;
+          this.scene.add(directionalLight);
+
+          const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+          fillLight.position.set(-25, 20, -25);
+          this.scene.add(fillLight);
+
+          const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
+          rimLight.position.set(0, 10, -50);
+          this.scene.add(rimLight);
+        }
+
+        setupControls() {
+          this.controls = new OrbitControls(
+            this.camera,
+            this.renderer.domElement
+          );
+          this.controls.enableDamping = true;
+          this.controls.dampingFactor = 0.08;
+          this.controls.screenSpacePanning = false;
+
+          // Disable default zoom, we implement custom wheel zoom
+          this.controls.enableZoom = false;
+          this.controls.minDistance = 5;
+          this.controls.maxDistance = 500;
+
+          this.controls.enableRotate = true;
+          this.controls.rotateSpeed = 0.6;
+          this.controls.minPolarAngle = 0.1;
+          this.controls.maxPolarAngle = Math.PI - 0.1;
+
+          this.controls.enablePan = true;
+          this.controls.panSpeed = 0.8;
+          this.controls.keyPanSpeed = 15.0;
+
+          this.controls.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          };
+          this.controls.touches = {
+            ONE: THREE.TOUCH.ROTATE,
+            TWO: THREE.TOUCH.DOLLY_PAN,
+          };
+          this.controls.autoRotate = false;
+          this.controls.autoRotateSpeed = 1.0;
+        }
+
+        setupEventListeners() {
+          window.addEventListener("resize", () => this.handleResize());
+          this.container.addEventListener("contextmenu", (e) =>
+            e.preventDefault()
+          );
+          this.renderer.domElement.addEventListener("click", () => {
+            this.renderer.domElement.focus();
+          });
+          this.renderer.domElement.tabIndex = 0;
+
+          this.renderer.domElement.addEventListener("mousedown", (e) =>
+            this.onMouseDown(e)
+          );
+          this.renderer.domElement.addEventListener("mousemove", (e) =>
+            this.onMouseMove(e)
+          );
+          this.renderer.domElement.addEventListener("mouseup", (e) =>
+            this.onMouseUp(e)
+          );
+          this.renderer.domElement.addEventListener("click", (e) =>
+            this.onMouseClick(e)
+          );
+          this.renderer.domElement.addEventListener("wheel", (e) =>
+            this.onMouseWheel(e)
+          );
+
+          window.addEventListener("keydown", (event) => {
+            if (event.code === "Escape") this.clearSelection();
+          });
+        }
+
+        handleResize() {
+          const width = this.container.clientWidth;
+          const height = this.container.clientHeight;
+          this.camera.aspect = width / height;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(width, height);
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        }
+
+        animate() {
+          requestAnimationFrame(() => this.animate());
+          if (this.controls) this.controls.update();
+          if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(this.scene, this.camera);
+          }
+        }
+
+        updateMousePosition(event) {
+          const rect = this.renderer.domElement.getBoundingClientRect();
+          this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        }
+
+        onMouseWheel(event) {
+          event.preventDefault();
+          const zoomScale = event.deltaY > 0 ? 1.1 : 0.9;
+          this.updateMousePosition(event);
+          this.raycaster.setFromCamera(this.mouse, this.camera);
+          const intersects = this.raycaster.intersectObjects(
+            this.modelGroup.children,
+            true
+          );
+          const pivot =
+            intersects.length > 0
+              ? intersects[0].point.clone()
+              : this.controls.target.clone();
+
+          const camToPivot = new THREE.Vector3().subVectors(
+            this.camera.position,
+            pivot
+          );
+          camToPivot.multiplyScalar(zoomScale);
+          const newCamPos = new THREE.Vector3().addVectors(pivot, camToPivot);
+
+          const distToTarget = newCamPos.distanceTo(this.controls.target);
+          const clampedDist = THREE.MathUtils.clamp(
+            distToTarget,
+            this.controls.minDistance,
+            this.controls.maxDistance
+          );
+          if (distToTarget !== clampedDist) {
+            const dir = new THREE.Vector3()
+              .subVectors(newCamPos, this.controls.target)
+              .normalize();
+            newCamPos
+              .copy(this.controls.target)
+              .add(dir.multiplyScalar(clampedDist));
+          }
+
+          this.camera.position.copy(newCamPos);
+          this.controls.update();
+        }
+
+        onMouseDown(event) {
+          this.isDragging = false;
+          this.updateMousePosition(event);
+        }
+        onMouseMove(event) {
+          if (event.buttons > 0) this.isDragging = true;
+          this.updateMousePosition(event);
+        }
+        onMouseUp() {
+          if (this.isDragging) {
+            this.isDragging = false;
+            return;
+          }
+        }
+
+        onMouseClick(event) {
+          if (this.isDragging || event.button !== 0) return;
+
+          this.updateMousePosition(event);
+          this.raycaster.setFromCamera(this.mouse, this.camera);
+
+          const hits = this.raycaster.intersectObjects(
+            this.modelGroup.children,
+            true
+          );
+          const hit = hits.find((h) => h.object.type !== "LineSegments");
+          const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+
+          if (!hit) {
+            if (!additive) this.clearSelection();
+            return;
+          }
+
+          let targetGroup = hit.object;
+          while (targetGroup.parent && targetGroup.parent !== this.modelGroup) {
+            targetGroup = targetGroup.parent;
+          }
+
+          const guid =
+            targetGroup?.userData?.ifcGuid ||
+            targetGroup?.userData?.GlobalId ||
+            targetGroup?.userData?.globalId;
+
+          if (!guid) return;
+          this._updateSelectionFromClick(guid, additive);
+        }
+
+        _updateSelectionFromClick(guid, additive) {
+          let newSet = new Set(this.selectedGuids);
+          if (additive) {
+            if (newSet.has(guid)) newSet.delete(guid);
+            else newSet.add(guid);
+          } else {
+            newSet = new Set([guid]);
+          }
+          this.setSelection(Array.from(newSet));
+        }
+
+        setSelection(guidsArray) {
+          const newSet = new Set(guidsArray);
+
+          // unhighlight removed
+          this.selectedGuids.forEach((g) => {
+            if (!newSet.has(g)) this._unhighlightByGuid(g);
+          });
+
+          // highlight added
+          newSet.forEach((g) => {
+            if (!this.selectedGuids.has(g)) this._highlightByGuid(g);
+          });
+
+          this.selectedGuids = newSet;
+
+          if (typeof this.onSelectionChange === "function") {
+            this.onSelectionChange(Array.from(this.selectedGuids));
+          }
+        }
+
+        _highlightByGuid(guid) {
+          const obj = this.guidToObject.get(guid);
+          if (!obj) return;
+
+          let mesh = obj;
+          if (obj.type === "Group" && obj.children.length > 0)
+            mesh = obj.children[0];
+
+          const originalMaterial = mesh.material;
+          mesh.material = this.highlightMaterial;
+
+          this.selectionMap.set(guid, {
+            object: obj,
+            material: originalMaterial,
+          });
+        }
+
+        _unhighlightByGuid(guid) {
+          const entry = this.selectionMap.get(guid);
+          if (!entry) return;
+          let mesh = entry.object;
+          if (mesh.type === "Group" && mesh.children.length > 0)
+            mesh = mesh.children[0];
+          mesh.material = entry.material;
+          this.selectionMap.delete(guid);
+        }
+
+        clearSelection() {
+          this.setSelection([]);
+        }
+
+        showLoading(show, message = "모델 로딩중...") {
+          if (show) {
+            if (!this.loadingElement) {
+              this.loadingElement = document.createElement("div");
+              this.loadingElement.id = "ifc-viewer-loading";
+              this.loadingElement.style.cssText = `
+            position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+            z-index:1000;text-align:center;background:rgba(255,255,255,0.9);
+            padding:20px;border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,0.1);`;
+              this.loadingElement.innerHTML = `
+            <div style="width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 10px;"></div>
+            <div style="color:#495057;font-weight:600;" id="loading-text">${message}</div>
+            <style>@keyframes spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}</style>`;
+              this.container.appendChild(this.loadingElement);
+            } else {
+              this.loadingElement.querySelector("#loading-text").textContent =
+                message;
+              this.loadingElement.style.display = "block";
+            }
+          } else if (this.loadingElement) {
+            this.loadingElement.style.display = "none";
+            hideLegacySpinners();
+          }
+        }
+
+        addModelWithEdges(geometry, originalMaterial, userData) {
+          const gray = new THREE.Color(0.502, 0.502, 0.502);
+          let finalMat;
+          if (
+            originalMaterial &&
+            originalMaterial.color &&
+            !originalMaterial.color.equals(new THREE.Color(1, 1, 1)) &&
+            !originalMaterial.color.equals(new THREE.Color(0, 0, 0))
+          ) {
+            finalMat = originalMaterial.clone();
+          } else {
+            finalMat = new THREE.MeshLambertMaterial({
+              color: gray,
+              side: THREE.DoubleSide,
+              transparent: originalMaterial
+                ? originalMaterial.transparent
+                : false,
+              opacity: originalMaterial ? originalMaterial.opacity : 1.0,
+            });
+          }
+
+          const mesh = new THREE.Mesh(geometry, finalMat);
+          mesh.userData = userData;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+
+          const edges = new THREE.EdgesGeometry(geometry);
+          const edgeMat = new THREE.LineBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.4,
+            linewidth: 1,
+          });
+          const wire = new THREE.LineSegments(edges, edgeMat);
+          wire.userData = userData;
+
+          const group = new THREE.Group();
+          group.add(mesh);
+          group.add(wire);
+          group.userData = userData;
+          return group;
+        }
+
+        addModel(object) {
+          this.modelGroup.add(object);
+          const guid =
+            object?.userData?.ifcGuid ||
+            object?.userData?.GlobalId ||
+            object?.userData?.globalId ||
+            null;
+          if (guid) this.guidToObject.set(guid, object);
+        }
+
+        clearModels() {
+          this.clearSelection();
+          if (this.modelGroup) {
+            while (this.modelGroup.children.length > 0) {
+              const child = this.modelGroup.children[0];
+              if (child.geometry) child.geometry.dispose();
+              if (child.material) {
+                if (Array.isArray(child.material))
+                  child.material.forEach((m) => m.dispose());
+                else child.material.dispose();
+              }
+              this.modelGroup.remove(child);
+            }
+          }
+        }
+
+        fitCameraToModel() {
+          if (!this.modelGroup || this.modelGroup.children.length === 0) {
+            this.camera.position.set(30, 25, 30);
+            this.camera.lookAt(0, 0, 0);
+            this.controls.target.set(0, 0, 0);
+            this.controls.update();
+            return;
+          }
+
+          const box = new THREE.Box3().setFromObject(this.modelGroup);
+          const center = box.getCenter(new THREE.Vector3());
+          const size = box.getSize(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const fov = this.camera.fov * (Math.PI / 180);
+          const distance = Math.abs(maxDim / (2 * Math.tan(fov / 2)));
+          const finalDistance = distance * 1.5;
+
+          const phi = Math.PI / 6;
+          const theta = Math.PI / 4;
+          const x = center.x + finalDistance * Math.sin(phi) * Math.cos(theta);
+          const y = center.y + finalDistance * Math.cos(phi);
+          const z = center.z + finalDistance * Math.sin(phi) * Math.sin(theta);
+
+          this.camera.position.set(x, y, z);
+          this.camera.lookAt(center);
+
+          this.controls.target.copy(center);
+          this.controls.minDistance = finalDistance * 0.1;
+          this.controls.maxDistance = finalDistance * 5;
+          this.controls.update();
+        }
+
+        resetView() {
+          this.fitCameraToModel();
+        }
+        toggleAutoRotate() {
+          this.controls.autoRotate = !this.controls.autoRotate;
+          return this.controls.autoRotate;
+        }
+        toggleWireframe() {
+          this.modelGroup.traverse((child) => {
+            if (
+              child.type === "Mesh" &&
+              child.material &&
+              child.material.wireframe !== undefined
+            ) {
+              child.material.wireframe = !child.material.wireframe;
+            }
+          });
+        }
+      }
+
+      /* ===================== 뷰어 인스턴스 생성 ===================== */
+      const viewer = new IFCViewer3D("viewer");
+      window.ifcViewer = viewer;
+
+      // 뷰어 -> 테이블 동기화
+      viewer.onSelectionChange = (guids) => {
+        if (window.isSyncingFromTable) return;
+        window.isSyncingFromViewer = true;
+        window.selectRowsByGuids(guids);
+        window.isSyncingFromViewer = false;
+      };
+
+      // IFC 로딩 (Pyodide + IfcOpenShell)
       const IFC_URL = "{{ ifc_abs_url }}";
       const WHEEL_URL =
         "{% static 'wasm/IfcOpenShell-0.7.0-py3-none-any.whl' %}";
 
+      function showLoadingStatus(msg) {
+        viewer.showLoading(true, msg);
+      }
+
       (async () => {
+        hideLegacySpinners();
         try {
-          console.log("🔄 Pyodide 로딩 시작...");
+          showLoadingStatus("Pyodide 초기화 중...");
           const pyodide = await loadPyodide();
           await pyodide.loadPackage("micropip");
           const micropip = pyodide.pyimport("micropip");
+
+          showLoadingStatus("IfcOpenShell 설치 중...");
           await micropip.install(WHEEL_URL);
-          console.log("✅ IfcOpenShell 설치 완료");
 
-          // IFC 텍스트 로드
-          console.log("📁 IFC 파일 로딩 중...");
+          showLoadingStatus("IFC 파일 다운로드 중...");
           const ifcText = await (await fetch(IFC_URL)).text();
-          console.log("✅ IFC 파일 로드 완료");
 
-          // Python: IFC 열기 + geometry iterator
-          console.log("🔧 IFC 파싱 시작...");
+          showLoadingStatus("IFC 파싱 중...");
           const ifcopenshell = pyodide.pyimport("ifcopenshell");
           const ifc = ifcopenshell.file.from_string(ifcText);
           const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
-          const s = ifcopenshell_geom.settings();
-          s.set(s.WELD_VERTICES, false);
 
-          const it = ifcopenshell_geom.iterator(s, ifc);
-          let lastMeshId = null;
-          let geometries = [];
-          let objectCount = 0;
+          const settings = ifcopenshell_geom.settings();
+          settings.set(settings.WELD_VERTICES, false);
 
-          if (it.initialize()) {
+          const iterator = ifcopenshell_geom.iterator(settings, ifc);
+
+          if (iterator.initialize()) {
+            showLoadingStatus("3D 지오메트리 생성 중...");
+            let geometries = [];
+            let lastMeshId = null;
+            let processed = 0;
+
             while (true) {
-              const obj = it.get();
-              const ty = ifc.by_id(obj.id).is_a();
-              if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
+              const obj = iterator.get();
+              const elementType = ifc.by_id(obj.id).is_a();
+
+              if (
+                elementType !== "IfcOpeningElement" &&
+                elementType !== "IfcSpace"
+              ) {
                 if (lastMeshId !== obj.geometry.id) {
                   geometries = [];
 
-                  const materials = obj.geometry.materials.toJs().map(
-                    (e) =>
-                      new THREE.MeshLambertMaterial({
-                        color: new THREE.Color(...e.diffuse.toJs()),
-                        opacity: 1.0 - e.transparency,
-                        transparent: e.transparency > 1e-5,
-                        side: THREE.DoubleSide,
-                      })
-                  );
+                  const mats = obj.geometry.materials.toJs().map((mat) => {
+                    const diffuse = mat.diffuse.toJs();
+                    let hasValidColor = false;
+                    if (diffuse.length === 3) {
+                      const [r, g, b] = diffuse;
+                      hasValidColor = !(
+                        (r === 1 && g === 1 && b === 1) ||
+                        (r === 0 && g === 0 && b === 0)
+                      );
+                    }
+                    return new THREE.MeshLambertMaterial({
+                      color: hasValidColor
+                        ? new THREE.Color(...diffuse)
+                        : new THREE.Color(0.502, 0.502, 0.502),
+                      opacity: 1.0 - mat.transparency,
+                      transparent: mat.transparency > 1e-5,
+                      side: THREE.DoubleSide,
+                    });
+                  });
 
                   const mapping = {};
                   obj.geometry.material_ids.toJs().forEach((mid, idx) => {
@@ -1458,170 +2159,157 @@
                     mapping[mid].push(idx);
                   });
 
-                  const vs = new Float32Array(obj.geometry.verts.toJs());
-                  const ns = new Float32Array(obj.geometry.normals.toJs());
-                  const fs = obj.geometry.faces.toJs();
+                  const vertices = new Float32Array(obj.geometry.verts.toJs());
+                  const normals = new Float32Array(obj.geometry.normals.toJs());
+                  const faces = obj.geometry.faces.toJs();
 
                   let offset = 0;
                   if (mapping[-1]) {
-                    materials.unshift(
+                    mats.unshift(
                       new THREE.MeshLambertMaterial({
-                        color: new THREE.Color(0.6, 0.6, 0.6),
+                        color: new THREE.Color(0.502, 0.502, 0.502),
                         side: THREE.DoubleSide,
                       })
                     );
                     offset = 1;
                   }
 
-                  materials.forEach((mat, mi) => {
+                  mats.forEach((material, mi) => {
                     const idxList = mapping[mi - offset];
-                    if (!idxList) return;
-                    const g = new THREE.BufferGeometry();
-                    const flatIdx = [];
+                    if (!idxList || idxList.length === 0) return;
+
+                    const geometry = new THREE.BufferGeometry();
+                    const indices = [];
                     idxList.forEach((i) => {
-                      flatIdx.push(fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]);
+                      indices.push(
+                        faces[3 * i],
+                        faces[3 * i + 1],
+                        faces[3 * i + 2]
+                      );
                     });
-                    g.setIndex(flatIdx);
-                    g.setAttribute(
+                    geometry.setIndex(indices);
+                    geometry.setAttribute(
                       "position",
-                      new THREE.BufferAttribute(vs, 3)
+                      new THREE.BufferAttribute(vertices, 3)
                     );
-                    g.setAttribute("normal", new THREE.BufferAttribute(ns, 3));
-                    geometries.push([g, mat]);
+                    geometry.setAttribute(
+                      "normal",
+                      new THREE.BufferAttribute(normals, 3)
+                    );
+                    geometry.computeBoundingSphere();
+
+                    geometries.push([geometry, material]);
                   });
 
                   lastMeshId = obj.geometry.id;
                 }
 
-                // Mesh 인스턴스 생성
-                geometries.forEach(([g, mat]) => {
-                  const mesh = new THREE.Mesh(g, mat);
-                  const m = obj.transformation.matrix.data.toJs();
+                geometries.forEach(([geometry, material]) => {
+                  const userData = {
+                    ifcId: obj.id,
+                    ifcType: obj.type,
+                    ifcGuid: obj.guid || null,
+                    GlobalId: obj.guid || null,
+                    elementType,
+                  };
 
-                  // IFC 변환 행렬을 Three.js에 적용
-                  // 기존 방식을 유지하되 더 안전하게 처리
-                  const mat4 = new THREE.Matrix4()
+                  const meshGroup = viewer.addModelWithEdges(
+                    geometry,
+                    material,
+                    userData
+                  );
+
+                  const tm = obj.transformation.matrix.data.toJs();
+                  const matrix = new THREE.Matrix4()
                     .set(
-                      m[0],
-                      m[1],
-                      m[2],
+                      tm[0],
+                      tm[1],
+                      tm[2],
                       0,
-                      m[3],
-                      m[4],
-                      m[5],
+                      tm[3],
+                      tm[4],
+                      tm[5],
                       0,
-                      m[6],
-                      m[7],
-                      m[8],
+                      tm[6],
+                      tm[7],
+                      tm[8],
                       0,
-                      m[9],
-                      m[10],
-                      m[11],
+                      tm[9],
+                      tm[10],
+                      tm[11],
                       1
                     )
                     .transpose();
 
-                  mesh.matrixAutoUpdate = false;
-                  mesh.matrix = mat4;
-                  mesh.userData.ifcId = obj.id; // IFC ID 저장
-                  scene.add(mesh);
-                  objectCount++;
-                });
-              }
-              if (!it.next()) break;
-            }
-          }
+                  meshGroup.matrixAutoUpdate = false;
+                  meshGroup.matrix.copy(matrix);
 
-          console.log(`✅ IFC 지오메트리 로드 완료: ${objectCount}개 객체`);
-          zoomToFit();
-          animate();
-        } catch (error) {
-          console.error("❌ IFC 로딩 실패:", error);
-          // 에러 발생 시에도 기본 애니메이션은 시작
-          animate();
+                  viewer.addModel(meshGroup);
+                });
+
+                processed++;
+                if (processed % 50 === 0)
+                  showLoadingStatus(`처리 중... ${processed}개`);
+              }
+
+              if (!iterator.next()) break;
+            }
+
+            showLoadingStatus(`✅ 모델 로딩 완료! 총 ${processed}개 객체 처리`);
+            // IFC Z-up -> Three Y-up 회전 필요 없음 (우리는 그대로 사용) / 필요시 viewer.modelGroup.rotation.x = -Math.PI/2;
+
+            setTimeout(() => {
+              viewer.fitCameraToModel();
+              viewer.showLoading(false);
+            }, 100);
+          } else {
+            throw new Error("IFC iterator 초기화 실패");
+          }
+        } catch (err) {
+          console.error("❌ IFC 로딩 실패:", err);
+          showLoadingStatus("로딩 실패 - 기본 박스 표시");
+
+          const geometry = new THREE.BoxGeometry(5, 5, 5);
+          const material = new THREE.MeshLambertMaterial({
+            color: new THREE.Color(0.502, 0.502, 0.502),
+            side: THREE.DoubleSide,
+          });
+          const userData = {
+            ifcId: "test",
+            ifcType: "Test",
+            elementType: "TestBox",
+          };
+          const test = viewer.addModelWithEdges(geometry, material, userData);
+          viewer.addModel(test);
+          viewer.fitCameraToModel();
+          viewer.showLoading(false);
+        } finally {
+          hideLegacySpinners();
         }
       })();
 
-      function zoomToFit() {
-        const box = new THREE.Box3().setFromObject(scene);
-        if (box.isEmpty()) {
-          console.log("📦 씬이 비어있습니다.");
-          return;
-        }
-
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3()).length();
-        const dist = size * 1.5;
-
-        // IFC Z-up 좌표계에 맞는 카메라 포지셔닝
-        camera.position.set(
-          center.x + dist * 0.5,
-          center.y + dist * 0.5,
-          center.z + dist * 1.0 // Z축이 위쪽이므로 높은 곳에서 보기
-        );
-
-        camera.lookAt(center);
-        controls.target.copy(center);
-        controls.update();
-
-        console.log("📷 카메라 위치 조정 완료");
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-      }
-
-      window.addEventListener("resize", () => {
-        const w = viewDiv.clientWidth;
-        const h = viewDiv.clientHeight;
-        renderer.setSize(w, h);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-      });
-
-      // 디버깅 함수 (개발 시에만 사용)
-      async function debugNewIFCGeneration() {
-        try {
-          console.log("🔍 새 IFC 파일 생성 테스트 시작...");
-
-          const response = await fetch(
-            `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`
-          );
-
-          if (response.ok) {
-            const blob = await response.blob();
-            console.log(`✅ 새 IFC 파일 생성 성공: ${blob.size} bytes`);
-
-            return {
-              success: true,
-              size: blob.size,
-              message: "파일 생성 성공",
-            };
-          } else {
-            const error = await response.json();
-            console.log(`❌ 새 IFC 파일 생성 실패: ${error.error}`);
-            return {
-              success: false,
-              error: error.error,
-            };
-          }
-        } catch (error) {
-          console.log(`❌ 테스트 실패: ${error.message}`);
-          return {
-            success: false,
-            error: error.message,
-          };
-        }
-      }
-
-      // 전역으로 노출 (디버깅용)
-      window.debugNewIFCGeneration = debugNewIFCGeneration;
-      window.zoomToFit = zoomToFit;
-
-      // 브라우저 콘솔에서 사용: debugNewIFCGeneration();
+      // 디버깅 헬퍼
+      window.viewerControls = {
+        resetView: () => viewer.resetView(),
+        toggleAutoRotate: () => viewer.toggleAutoRotate(),
+        toggleWireframe: () => viewer.toggleWireframe(),
+        clearSelection: () => viewer.clearSelection(),
+        getStats: () => ({
+          objects: viewer.modelGroup.children.length,
+          triangles: viewer.modelGroup.children.reduce((sum, child) => {
+            return (
+              sum +
+              (child.children?.[0]?.geometry
+                ? child.children[0].geometry.index.count / 3
+                : 0)
+            );
+          }, 0),
+          selected: Array.from(viewer.selectedGuids),
+        }),
+      };
+      console.log("🎮 viewerControls.* 사용 가능");
     </script>
+
     <!-- ─────────────────────────────  페이지 전용 스타일 (테이블 축소 등)  ───────────────────────────── -->
     <style>
       .group-header {
@@ -1868,6 +2556,11 @@
       .left-panel,
       .right-panel {
         height: 100%;
+      }
+      /* 3D-Table Selection Sync */
+      .object-row.selected-row,
+      .aibim-table tbody tr.object-row.selected-row {
+        background: #ffe8a1 !important;
       }
     </style>
   </body>
