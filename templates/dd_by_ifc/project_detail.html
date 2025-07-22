@@ -100,6 +100,22 @@
       <div class="container_detail">
         <div style="font-weight: bold">공종별 내역서</div>
       </div>
+      <div
+        class="summary-group-bar"
+        id="summaryGroupBar"
+        style="margin: 6px 0 10px 0; font-size: 11px"
+      >
+        <label
+          >하위 그룹 기준:
+          <select
+            id="summaryGroupSelect"
+            style="font-size: 11px; padding: 2px 4px"
+          >
+            <option value="">없음</option>
+          </select>
+        </label>
+      </div>
+
       <div class="container_detail">
         <div class="table-wrapper" style="overflow-x: auto">
           <table id="summaryTable" class="table table-bordered aibim-table">
@@ -296,6 +312,8 @@
       let expandedCodes = new Set(); // 펼쳐진 공사코드들
       let latestSummaryData = []; // 마지막으로 받은 summary_data 원본 저장
 
+      let summaryGroupBy = ""; // 하위 그룹핑 기준 필드명
+
       // 공통 util (전역 노출)
       function applyTableSelectionStyles() {
         document
@@ -372,6 +390,8 @@
         loadDefaultCostCodes();
         loadIFCObjects();
         loadSummaryTable();
+        initSummaryGroupingUI();
+
         setupEventHandlers();
 
         // 사용법 안내를 위한 툴팁 추가
@@ -407,6 +427,28 @@
             }
           })
           .catch((err) => console.error("기본 코드리스트 로드 실패:", err));
+      }
+      function initSummaryGroupingUI() {
+        const sel = document.getElementById("summaryGroupSelect");
+        if (!sel) return;
+
+        // headers 에서 선택지 구성 (Properties/Quantities 포함 가능)
+        // 이미 visibleHeaders 만들 때 썼던 headers를 그대로 이용
+        const opts = [...headers]; // 필요시 중복 제거/정렬
+        opts.sort((a, b) => a.localeCompare(b));
+
+        opts.forEach((h) => {
+          const op = document.createElement("option");
+          op.value = h;
+          op.textContent = h;
+          sel.appendChild(op);
+        });
+
+        sel.addEventListener("change", (e) => {
+          summaryGroupBy = e.target.value || "";
+          // 다시 렌더링 (펼친 것들만 영향받음)
+          updateSummaryTableDisplay(latestSummaryData);
+        });
       }
 
       // 파싱된 코드를 서버에 업로드 (API 경로 수정)
@@ -1546,6 +1588,51 @@
           e.target.closest("tr").classList.add("selected");
         }
       });
+      // ────────────────────────────────────────────────
+      // 요약표 행 클릭 → 해당 코드의 모든 객체 선택 & 동기화
+      // ────────────────────────────────────────────────
+      document.addEventListener("click", (e) => {
+        const expanderClicked = e.target.closest(".summary-expander-btn");
+        // expander 버튼 클릭이면 여기서 처리하지 않음 (기존 토글 핸들러에 맡김)
+        if (expanderClicked) return;
+
+        const tr = e.target.closest(".summary-code-row");
+        if (!tr) return; // 요약표 코드행이 아님
+        const code = tr.dataset.code;
+        if (!code) return;
+
+        // 객체 GUID 목록 추출
+        const objs = codeToObjects.get(code) || [];
+        const guids = objs
+          .map((o) => o.GlobalId || o.globalId || o.GUID || o.Guid)
+          .filter(Boolean);
+
+        // 선택 반영
+        selectRowsByGuids(guids);
+        if (window.ifcViewer) {
+          window.ifcViewer.setSelection(guids);
+        }
+
+        // 요약표 행 하이라이트
+        document
+          .querySelectorAll(".summary-code-row")
+          .forEach((r) => r.classList.remove("selected-main"));
+        tr.classList.add("selected-main");
+
+        // 하위(펼친) 표가 있다면 그 안의 행들도 하이라이트
+        if (expandedCodes.has(code)) {
+          const tbody = document.querySelector(
+            `.summary-child-row[data-code="${code}"] table.summary-child-table tbody`
+          );
+          if (tbody) {
+            tbody.querySelectorAll("tr").forEach((r) => {
+              if (guids.includes(r.dataset.guid))
+                r.classList.add("selected-row");
+              else r.classList.remove("selected-row");
+            });
+          }
+        }
+      });
 
       // 코드 파일 업로드 처리 (API 경로 수정)
       function handleCostCodeFileUpload(event) {
@@ -1690,6 +1777,7 @@
       // 하위 객체테이블 생성
       function createNestedObjectTable(code) {
         const objs = codeToObjects.get(code) || [];
+
         // 표시할 컬럼(기본은 visibleHeaders, 없으면 일부 기본값)
         const cols =
           visibleHeaders && visibleHeaders.length
@@ -1718,44 +1806,87 @@
         table.appendChild(thead);
 
         const tbody = document.createElement("tbody");
-        objs.forEach((obj) => {
+
+        // 값 꺼내는 유틸
+        const getVal = (obj, key) => {
+          let v = obj[key];
+          if (
+            v === undefined &&
+            obj.Quantities &&
+            obj.Quantities[key] !== undefined
+          )
+            v = obj.Quantities[key];
+          if (
+            v === undefined &&
+            obj.Properties &&
+            obj.Properties[key] !== undefined
+          )
+            v = obj.Properties[key];
+          return v;
+        };
+
+        if (!summaryGroupBy) {
+          // ====== 그룹핑 없음: 기존 그대로 렌더 ======
+          objs.forEach((obj) => {
+            appendObjRow(obj, tbody, cols);
+          });
+        } else {
+          // ====== 그룹핑 있음 ======
+          const groups = {};
+          objs.forEach((obj) => {
+            let v = getVal(obj, summaryGroupBy);
+            if (v === undefined || v === null || v === "") v = "N/A";
+            if (!groups[v]) groups[v] = [];
+            groups[v].push(obj);
+          });
+
+          Object.entries(groups).forEach(([gval, list]) => {
+            // 그룹 헤더 행
+            const gtr = document.createElement("tr");
+            gtr.className = "child-group-header";
+            const gtd = document.createElement("td");
+            gtd.colSpan = cols.length;
+            // 총금액 합계 등 간단 요약
+            const totalAmt = list.reduce((s, o) => {
+              const n = Number(getVal(o, "총금액"));
+              return isNaN(n) ? s : s + n;
+            }, 0);
+            gtd.textContent = `${summaryGroupBy}: ${gval}  (객체 ${
+              list.length
+            }개, 총금액 ${formatNumber(totalAmt)} 원)`;
+            gtr.appendChild(gtd);
+            tbody.appendChild(gtr);
+
+            // 해당 그룹 객체들
+            list.forEach((obj) => {
+              appendObjRow(obj, tbody, cols);
+            });
+          });
+        }
+
+        table.appendChild(tbody);
+        return table;
+
+        // 내부 헬퍼: 객체 한 행 추가 + 클릭 동기화
+        function appendObjRow(obj, tbody, cols) {
           const tr = document.createElement("tr");
           const guid =
             obj.GlobalId || obj.globalId || obj.GUID || obj.Guid || "";
           tr.dataset.guid = guid;
 
           cols.forEach((h) => {
-            let v = obj[h];
-            if (
-              v === undefined &&
-              obj.Quantities &&
-              obj.Quantities[h] !== undefined
-            )
-              v = obj.Quantities[h];
-            if (
-              v === undefined &&
-              obj.Properties &&
-              obj.Properties[h] !== undefined
-            )
-              v = obj.Properties[h];
-
-            if (typeof v === "number") {
-              v = formatNumber(v);
-            }
+            let v = getVal(obj, h);
+            if (typeof v === "number") v = formatNumber(v);
             const td = document.createElement("td");
             td.textContent = v ?? "";
             tr.appendChild(td);
           });
 
-          // 클릭 → 선택 동기화
           tr.addEventListener("click", () => {
-            // viewer & table sync
             if (guid) {
-              // main table + viewer
               selectRowsByGuids([guid]);
-              if (window.ifcViewer) {
-                window.ifcViewer.setSelection([guid]);
-              }
+              if (window.ifcViewer) window.ifcViewer.setSelection([guid]);
+
               // nested table 선택 스타일
               tbody
                 .querySelectorAll("tr")
@@ -1765,10 +1896,7 @@
           });
 
           tbody.appendChild(tr);
-        });
-
-        table.appendChild(tbody);
-        return table;
+        }
       }
 
       // 요약표 토글 이벤트(Delegation)
@@ -2831,6 +2959,17 @@
       .expander-col {
         width: 24px;
         text-align: center;
+      }
+      /* Summary main row 선택 표시 */
+      .summary-code-row.selected-main {
+        background: #ffe8a1 !important;
+      }
+      .summary-group-bar label {
+        margin-right: 8px;
+      }
+      .child-group-header {
+        background: #f3f3f3 !important;
+        font-weight: bold;
       }
     </style>
   </body>
