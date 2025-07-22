@@ -533,6 +533,68 @@
       referrerpolicy="no-referrer"
     />
 
+    <style>
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+
+    <style>
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+
+    <!-- 로딩 스피너 HTML (3D 뷰어 컨테이너 안에 추가) -->
+    <div
+      id="viewer-loading"
+      style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      "
+    >
+      <div
+        style="
+          width: 40px;
+          height: 40px;
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #667eea;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 10px;
+        "
+      ></div>
+      <div style="color: #495057; font-weight: 600">모델 로딩중...</div>
+    </div>
+
+    <style>
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
     <!-- 메인 스크립트 -->
     <script>
       // 전역 변수
@@ -548,8 +610,61 @@
       let currentMappingId = null;
       // === 선택 동기화용 맵/상태 ===
       const guidToRow = new Map();
-      let selectedRowEl = null;
       let isSyncingFromViewer = false; // 루프 방지용
+
+      // ===== Multi‑Select Sync (Table <-> 3D) =====
+      const selectedGuids = new Set(); // 현재 선택된 guid들
+      let lastClickedRowIdx = -1; // 테이블에서 shift 범위 선택용
+      let isSyncingFromTable = false; // 테이블->뷰어 동기화 중?
+
+      // 테이블 선택 스타일 적용
+      function applyTableSelectionStyles() {
+        document.querySelectorAll("#tableBody tr.object-row").forEach((tr) => {
+          if (selectedGuids.has(tr.dataset.guid))
+            tr.classList.add("selected-row");
+          else tr.classList.remove("selected-row");
+        });
+      }
+
+      // 테이블 클릭 처리
+      function handleTableRowClick(e, guid, row) {
+        const idx = parseInt(row.dataset.idx, 10);
+        const additive = e.ctrlKey || e.metaKey; // 개별 토글
+        const range = e.shiftKey && lastClickedRowIdx >= 0; // 범위 선택
+
+        if (range) {
+          const rows = Array.from(
+            document.querySelectorAll("#tableBody tr.object-row")
+          );
+          const [start, end] =
+            idx > lastClickedRowIdx
+              ? [lastClickedRowIdx, idx]
+              : [idx, lastClickedRowIdx];
+          for (let i = start; i <= end; i++)
+            selectedGuids.add(rows[i].dataset.guid);
+        } else {
+          if (!additive) selectedGuids.clear(); // 기본은 단일 선택
+          if (additive && selectedGuids.has(guid)) selectedGuids.delete(guid);
+          else selectedGuids.add(guid);
+        }
+
+        lastClickedRowIdx = idx;
+        applyTableSelectionStyles();
+
+        // 뷰어로 동기화
+        if (window.ifcViewer && !isSyncingFromViewer) {
+          isSyncingFromTable = true;
+          window.ifcViewer.setSelection(Array.from(selectedGuids)); // 새로 만든 API (3번에서 구현)
+          isSyncingFromTable = false;
+        }
+      }
+
+      // 테이블에서 GUID들 세트로 선택 강제(뷰어 -> 테이블)
+      function selectRowsByGuids(guidsArray) {
+        selectedGuids.clear();
+        guidsArray.forEach((g) => selectedGuids.add(g));
+        applyTableSelectionStyles();
+      }
 
       // 페이지 로딩 시 초기화
       document.addEventListener("DOMContentLoaded", function () {
@@ -598,88 +713,11 @@
           });
       }
 
-      // 그룹 콤보박스 업데이트
-      function updateGroupComboBoxes() {
-        for (let i = 1; i <= 3; i++) {
-          const combo = document.getElementById("groupBy" + i);
-          const currentValue = combo.value;
-          combo.innerHTML = `<option value="">${i}차 그룹: 없음</option>`;
-
-          headers.sort().forEach((header) => {
-            const option = document.createElement("option");
-            option.value = header;
-            option.textContent = header;
-            combo.appendChild(option);
-          });
-
-          if (currentValue && headers.includes(currentValue)) {
-            combo.value = currentValue;
-          }
-        }
-      }
-
-      // 그룹화된 테이블 업데이트
-      function updateGroupedTable() {
-        const tableHeaders = document.getElementById("tableHeaders");
-        const tableBody = document.getElementById("tableBody");
-        // ★ 추가
-        guidToRow.clear();
-        selectedRowEl = null;
-        // 헤더 업데이트 (주요 헤더들만 표시)
-        const mainHeaders = [
-          "GlobalId",
-          "Name",
-          "IfcClass",
-          "SpatialContainer",
-        ];
-        const visibleHeaders = headers
-          .filter(
-            (h) =>
-              mainHeaders.includes(h) ||
-              ["Area", "Volume", "Length", "Height", "Width"].some((qty) =>
-                h.includes(qty)
-              )
-          )
-          .slice(0, 8); // 최대 8개 컬럼만 표시
-
-        tableHeaders.innerHTML = visibleHeaders
-          .map((h) => `<th>${h}</th>`)
-          .join("");
-
-        // 그룹 기준 수집
-        const groupKeys = [];
-        for (let i = 1; i <= 3; i++) {
-          const value = document.getElementById("groupBy" + i).value;
-          if (value) groupKeys.push(value);
-        }
-
-        // 테이블 바디 업데이트
-        tableBody.innerHTML = "";
-
-        if (groupKeys.length === 0) {
-          // 그룹화 없음
-          objectData.forEach((obj) => {
-            const row = createObjectRow(obj, visibleHeaders);
-            tableBody.appendChild(row);
-          });
-        } else {
-          // 그룹화 적용
-          const groupedData = groupObjectsByKeys(objectData, groupKeys);
-          renderGroupedData(
-            tableBody,
-            groupedData,
-            0,
-            groupKeys,
-            visibleHeaders
-          );
-        }
-      }
-
-      function createObjectRow(obj, visibleHeaders) {
+      function createObjectRow(obj, visibleHeaders, idx) {
         const row = document.createElement("tr");
         row.className = "object-row";
+        row.dataset.idx = idx;
 
-        // GlobalId 추출(대소문자/키 변형 대비)
         const guid =
           obj["GlobalId"] ||
           obj["globalId"] ||
@@ -694,47 +732,20 @@
         visibleHeaders.forEach((header) => {
           const cell = document.createElement("td");
           let value = obj[header];
-
-          if (typeof value === "number") {
+          if (typeof value === "number")
             value = value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
-          }
-
           cell.textContent = value ?? "";
           cell.title = value ?? "";
           row.appendChild(cell);
         });
 
-        // ★ 테이블 행 클릭 → 3D 뷰어 선택
-        row.addEventListener("click", () => {
+        row.addEventListener("click", (e) => {
           if (!guid) return;
-          handleTableRowClick(guid);
+          handleTableRowClick(e, guid, row); // (e, guid, row) 버전만 존재해야 함
         });
 
-        // ★ 맵 저장
         if (guid) guidToRow.set(guid, row);
-
         return row;
-      }
-      function handleTableRowClick(guid) {
-        selectTableRowByGuid(guid); // 스크롤 없음
-        if (window.ifcViewer) {
-          isSyncingFromViewer = true;
-          try {
-            window.ifcViewer.selectByGuid(guid);
-          } finally {
-            setTimeout(() => (isSyncingFromViewer = false), 0);
-          }
-        }
-      }
-
-      function selectTableRowByGuid(guid) {
-        if (selectedRowEl) selectedRowEl.classList.remove("selected-row");
-        const row = guidToRow.get(guid);
-        if (row) {
-          row.classList.add("selected-row");
-          selectedRowEl = row;
-          // ★ 스크롤 금지: 아무 것도 하지 않음
-        }
       }
 
       // 객체들을 키로 그룹화
@@ -757,16 +768,15 @@
         return grouped;
       }
 
-      // 그룹화된 데이터 렌더링
       function renderGroupedData(
         tbody,
         groupedData,
         depth,
         groupKeys,
-        visibleHeaders
+        visibleHeaders,
+        rowCounterRef
       ) {
         Object.entries(groupedData).forEach(([groupValue, content]) => {
-          // 그룹 헤더 행
           const groupRow = document.createElement("tr");
           groupRow.className = "group-header";
 
@@ -781,19 +791,21 @@
 
           if (Array.isArray(content)) {
             content.forEach((obj) => {
-              const row = createObjectRow(obj, visibleHeaders);
+              const row = createObjectRow(obj, visibleHeaders, rowCounterRef++);
               tbody.appendChild(row);
             });
           } else {
-            renderGroupedData(
+            rowCounterRef = renderGroupedData(
               tbody,
               content,
               depth + 1,
               groupKeys,
-              visibleHeaders
+              visibleHeaders,
+              rowCounterRef
             );
           }
         });
+        return rowCounterRef;
       }
 
       // AI 모델 정보 로드
@@ -1510,123 +1522,6 @@
           return "";
         }
       }
-    </script>
-
-    <style>
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
-    </style>
-
-    <style>
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
-    </style>
-
-    <!-- 로딩 스피너 HTML (3D 뷰어 컨테이너 안에 추가) -->
-    <div
-      id="viewer-loading"
-      style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        z-index: 1000;
-        text-align: center;
-        background: rgba(255, 255, 255, 0.9);
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      "
-    >
-      <div
-        style="
-          width: 40px;
-          height: 40px;
-          border: 4px solid #f3f3f3;
-          border-top: 4px solid #667eea;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin: 0 auto 10px;
-        "
-      ></div>
-      <div style="color: #495057; font-weight: 600">모델 로딩중...</div>
-    </div>
-
-    <style>
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
-    </style>
-
-    <!-- =========================================
-     1) 메인 로직 (AI 예측 / IFC 테이블 / 필터 & 집계)
-========================================= -->
-    <script>
-      /* =================== 전역 변수 =================== */
-
-      /* =================== 초기화 =================== */
-      document.addEventListener("DOMContentLoaded", function () {
-        loadIFCObjects();
-        setupEventHandlers();
-      });
-
-      /* =================== 이벤트 핸들러 =================== */
-      function setupEventHandlers() {
-        // AI 모델 선택
-        document
-          .getElementById("aiModelSelect")
-          .addEventListener("change", loadModelInfo);
-
-        // 그룹 콤보박스
-        for (let i = 1; i <= 3; i++) {
-          document
-            .getElementById("groupBy" + i)
-            .addEventListener("change", updateGroupedTable);
-        }
-
-        // 예측 실행
-        document
-          .getElementById("predictBtn")
-          .addEventListener("click", executePrediction);
-      }
-
-      /* =================== IFC 객체 로드 =================== */
-      function loadIFCObjects() {
-        fetch(`/ifc_ai_prediction/api/project/${PROJECT_ID}/objects/`)
-          .then((response) => response.json())
-          .then((data) => {
-            objectData = data.objects;
-            headers = data.headers;
-
-            document.getElementById(
-              "objectCount"
-            ).textContent = `총 ${data.total_count}개 객체`;
-
-            updateGroupComboBoxes();
-            updateGroupedTable();
-          })
-          .catch((error) => {
-            console.error("IFC 객체 로드 실패:", error);
-            document.getElementById("objectCount").textContent = "로딩 실패";
-          });
-      }
 
       /* =================== 그룹 콤보박스 =================== */
       function updateGroupComboBoxes() {
@@ -1653,6 +1548,9 @@
         const tableHeaders = document.getElementById("tableHeaders");
         const tableBody = document.getElementById("tableBody");
 
+        // 맵 초기화
+        guidToRow.clear();
+
         // 보여줄 주요 헤더
         const mainHeaders = [
           "GlobalId",
@@ -1668,25 +1566,25 @@
                 h.includes(qty)
               )
           )
-          .slice(0, 8); // 최대 8개
+          .slice(0, 8);
 
         tableHeaders.innerHTML = visibleHeaders
           .map((h) => `<th>${h}</th>`)
           .join("");
 
-        // 그룹 키 수집
+        // 그룹 키
         const groupKeys = [];
         for (let i = 1; i <= 3; i++) {
-          const value = document.getElementById("groupBy" + i).value;
-          if (value) groupKeys.push(value);
+          const v = document.getElementById("groupBy" + i).value;
+          if (v) groupKeys.push(v);
         }
 
         tableBody.innerHTML = "";
+        let rowCounter = 0; // 각 object-row에 idx 부여
 
         if (groupKeys.length === 0) {
-          // 그룹화 없음
           objectData.forEach((obj) => {
-            const row = createObjectRow(obj, visibleHeaders);
+            const row = createObjectRow(obj, visibleHeaders, rowCounter++);
             tableBody.appendChild(row);
           });
         } else {
@@ -1696,46 +1594,12 @@
             groupedData,
             0,
             groupKeys,
-            visibleHeaders
+            visibleHeaders,
+            rowCounter
           );
         }
-      }
-      function createObjectRow(obj, visibleHeaders) {
-        const row = document.createElement("tr");
-        row.className = "object-row";
 
-        // 다양한 키 대비
-        const guid =
-          obj["GlobalId"] ||
-          obj["globalId"] ||
-          obj["IfcGuid"] ||
-          obj["ifcGuid"] ||
-          obj["GUID"] ||
-          obj["Guid"] ||
-          null;
-        row.dataset.guid = guid || "";
-
-        visibleHeaders.forEach((header) => {
-          const cell = document.createElement("td");
-          let value = obj[header];
-          if (typeof value === "number") {
-            value = value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
-          }
-          cell.textContent = value ?? "";
-          cell.title = value ?? "";
-          row.appendChild(cell);
-        });
-
-        // 클릭 → 뷰어 선택
-        row.addEventListener("click", () => {
-          if (!guid) return;
-          handleTableRowClick(guid);
-        });
-
-        // GUID ↔ Row 매핑
-        if (guid) guidToRow.set(guid, row);
-
-        return row;
+        applyTableSelectionStyles(); // 렌더 후 반영
       }
 
       function groupObjectsByKeys(objects, keys, depth = 0) {
@@ -1755,43 +1619,6 @@
         });
 
         return grouped;
-      }
-
-      function renderGroupedData(
-        tbody,
-        groupedData,
-        depth,
-        groupKeys,
-        visibleHeaders
-      ) {
-        Object.entries(groupedData).forEach(([groupValue, content]) => {
-          const groupRow = document.createElement("tr");
-          groupRow.className = "group-header";
-
-          const groupCell = document.createElement("td");
-          groupCell.colSpan = visibleHeaders.length;
-          groupCell.textContent = `${"  ".repeat(depth)}▼ ${
-            groupKeys[depth]
-          }: ${groupValue}`;
-          groupRow.appendChild(groupCell);
-
-          tbody.appendChild(groupRow);
-
-          if (Array.isArray(content)) {
-            content.forEach((obj) => {
-              const row = createObjectRow(obj, visibleHeaders);
-              tbody.appendChild(row);
-            });
-          } else {
-            renderGroupedData(
-              tbody,
-              content,
-              depth + 1,
-              groupKeys,
-              visibleHeaders
-            );
-          }
-        });
       }
 
       /* =================== AI 모델 로드/정보 =================== */
@@ -2452,6 +2279,8 @@
           this.originalMaterial = null;
           this.highlightMaterial = null;
           this.isDragging = false;
+          this.selectedGuids = new Set(); // 현재 선택된 GUID들
+          this.selectionMap = new Map(); // guid -> {object, material}
 
           this.init();
         }
@@ -2507,6 +2336,67 @@
 
           this.isInitialized = true;
           console.log("✅ 3D 뷰어 초기화 완료");
+        }
+        setSelection(guidsArray) {
+          const newSet = new Set(guidsArray);
+
+          // 해제해야 할 것들
+          this.selectedGuids.forEach((g) => {
+            if (!newSet.has(g)) this._unhighlightByGuid(g);
+          });
+
+          // 새로 하이라이트할 것들
+          newSet.forEach((g) => {
+            if (!this.selectedGuids.has(g)) this._highlightByGuid(g);
+          });
+
+          this.selectedGuids = newSet;
+
+          // 콜백 (뷰어 -> 테이블 동기화)
+          if (typeof this.onSelectionChange === "function") {
+            this.onSelectionChange(Array.from(this.selectedGuids));
+          }
+        }
+
+        _updateSelectionFromClick(guid, additive) {
+          let newSet = new Set(this.selectedGuids);
+          if (additive) {
+            if (newSet.has(guid)) newSet.delete(guid);
+            else newSet.add(guid);
+          } else {
+            newSet = new Set([guid]);
+          }
+          this.setSelection(Array.from(newSet));
+        }
+
+        _highlightByGuid(guid) {
+          const obj = this.guidToObject.get(guid);
+          if (!obj) return;
+          let mesh = obj;
+          if (obj.type === "Group" && obj.children.length > 0)
+            mesh = obj.children[0];
+
+          const originalMaterial = mesh.material;
+          mesh.material = this.highlightMaterial;
+
+          this.selectionMap.set(guid, {
+            object: obj,
+            material: originalMaterial,
+          });
+        }
+
+        _unhighlightByGuid(guid) {
+          const entry = this.selectionMap.get(guid);
+          if (!entry) return;
+          let mesh = entry.object;
+          if (mesh.type === "Group" && mesh.children.length > 0)
+            mesh = mesh.children[0];
+          mesh.material = entry.material;
+          this.selectionMap.delete(guid);
+        }
+
+        clearSelection() {
+          this.setSelection([]);
         }
 
         showLoading(show, message = "모델 로딩중...") {
@@ -2741,10 +2631,13 @@
             this.modelGroup.children,
             true
           );
-          // ★ Mesh만 찾아서 사용
           const hit = hits.find((h) => h.object.type !== "LineSegments");
+
+          const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+
           if (!hit) {
-            this.clearSelection();
+            // 배경 클릭 시: 추가 선택 모드가 아니면 전체 해제
+            if (!additive) this.clearSelection();
             return;
           }
 
@@ -2752,50 +2645,29 @@
           while (targetGroup.parent && targetGroup.parent !== this.modelGroup) {
             targetGroup = targetGroup.parent;
           }
-          this.selectObject(targetGroup, hit.point);
-        }
-
-        selectObject(object) {
-          this.clearSelection();
-          this.selectedObject = object;
-
-          let meshToHighlight = object;
-          if (object.type === "Group" && object.children.length > 0) {
-            meshToHighlight = object.children[0];
-          }
-          this.originalMaterial = meshToHighlight.material;
-          meshToHighlight.material = this.highlightMaterial;
 
           const guid =
-            object?.userData?.ifcGuid ||
-            object?.userData?.GlobalId ||
-            object?.userData?.globalId;
-          if (guid && typeof this.onObjectSelected === "function") {
-            // ★ 플래그 건들지 말 것!
-            this.onObjectSelected(guid);
-          }
+            targetGroup?.userData?.ifcGuid ||
+            targetGroup?.userData?.GlobalId ||
+            targetGroup?.userData?.globalId;
+
+          if (!guid) return;
+
+          this._updateSelectionFromClick(guid, additive);
         }
 
-        selectByGuid(guid) {
-          const obj = this.guidToObject.get(guid);
-          if (!obj) return false;
-          this.selectObject(obj);
-          return true;
+        selectByGuid(guid, additive = false) {
+          const set = new Set(this.selectedGuids);
+          if (additive) set.add(guid);
+          else {
+            set.clear();
+            set.add(guid);
+          }
+          this.setSelection(Array.from(set));
         }
 
         clearSelection() {
-          if (this.selectedObject && this.originalMaterial) {
-            let meshToRestore = this.selectedObject;
-            if (
-              this.selectedObject.type === "Group" &&
-              this.selectedObject.children.length > 0
-            ) {
-              meshToRestore = this.selectedObject.children[0];
-            }
-            meshToRestore.material = this.originalMaterial;
-          }
-          this.selectedObject = null;
-          this.originalMaterial = null;
+          this.setSelection([]);
         }
 
         addModelWithEdges(geometry, originalMaterial, userData) {
@@ -2948,10 +2820,11 @@
       const viewer = new IFCViewer3D("viewer");
       window.ifcViewer = viewer; // 전역 접근
 
-      // ★ 뷰어 → 테이블 동기화
-      viewer.onObjectSelected = (guid) => {
-        if (isSyncingFromViewer) return; // 테이블에서 올라온 호출이면 무시
-        selectTableRowByGuid(guid); // 스크롤 없음
+      viewer.onSelectionChange = (guids) => {
+        if (isSyncingFromTable) return; // 테이블에서 트리거된 경우 무시
+        isSyncingFromViewer = true;
+        selectRowsByGuids(guids);
+        isSyncingFromViewer = false;
       };
 
       const IFC_URL = "{{ ifc_abs_url }}";
