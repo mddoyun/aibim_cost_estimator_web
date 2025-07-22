@@ -13,7 +13,7 @@ class IFCViewer {
     this.controls = null;
     this.currentFile = null;
 
-    // Three.js 기본 설정
+    // Three.js 기본 설정 - Z축을 위로 설정
     THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
   }
 
@@ -70,7 +70,7 @@ class IFCViewer {
 
     this.scene.add(new THREE.AmbientLight(0x404050));
 
-    // 카메라 설정
+    // 카메라 설정 - Z축이 위를 향하도록 설정
     this.camera = new THREE.PerspectiveCamera(
       45,
       this.container.clientWidth / this.container.clientHeight,
@@ -78,10 +78,31 @@ class IFCViewer {
       10000
     );
 
-    // 컨트롤 설정
+    // 카메라의 up 벡터를 Z축으로 명시적 설정
+    this.camera.up.set(0, 0, 1);
+
+    // 컨트롤 설정 - 개선된 설정
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
+
+    // 회전 제한 설정 (더 자연스러운 회전을 위해)
+    this.controls.enableZoom = true;
+    this.controls.enablePan = true;
+    this.controls.enableRotate = true;
+
+    // 회전 속도 조정
+    this.controls.rotateSpeed = 0.5;
+    this.controls.zoomSpeed = 1.0;
+    this.controls.panSpeed = 0.8;
+
+    // 수직 회전 제한 (짐벌락 방지)
+    this.controls.minPolarAngle = Math.PI * 0.1; // 18도
+    this.controls.maxPolarAngle = Math.PI * 0.9; // 162도
+
+    // 줌 제한
+    this.controls.minDistance = 1;
+    this.controls.maxDistance = 1000;
 
     // 윈도우 리사이즈 핸들러
     window.addEventListener("resize", () => this.onWindowResize());
@@ -280,30 +301,57 @@ class IFCViewer {
     const box = new THREE.Box3();
     box.setFromObject(this.scene);
 
+    if (box.isEmpty()) {
+      // 박스가 비어있으면 기본 위치 설정
+      this.camera.position.set(10, 10, 10);
+      this.controls.target.set(0, 0, 0);
+      this.controls.update();
+      return;
+    }
+
     const center = new THREE.Vector3();
     box.getCenter(center);
-    this.controls.target = center;
+
+    // 컨트롤 타겟을 중심으로 설정
+    this.controls.target.copy(center);
 
     const size = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
+
+    // FOV를 라디안으로 변환
     const fov = this.camera.fov * (Math.PI / 180);
     let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
 
-    cameraZ *= 1.5; // 여유 공간
+    cameraZ *= 2.0; // 충분한 여유 공간
 
-    this.camera.position.copy(
-      center
-        .clone()
-        .add(
-          new THREE.Vector3(0.5, 0.25, 1).normalize().multiplyScalar(cameraZ)
-        )
+    // Z축이 위를 향하는 좌표계에 맞는 카메라 위치 설정
+    // 남동쪽에서 약간 위로 바라보는 각도
+    const distance = cameraZ;
+    const cameraPosition = new THREE.Vector3(
+      center.x + distance * 0.7, // X축 (동쪽)
+      center.y + distance * 0.7, // Y축 (남쪽)
+      center.z + distance * 0.3 // Z축 (위쪽)
     );
 
-    this.camera.near = cameraZ / 100;
-    this.camera.far = cameraZ * 100;
+    this.camera.position.copy(cameraPosition);
+
+    // 카메라가 중심을 바라보도록 설정
+    this.camera.lookAt(center);
+
+    // Near/Far 평면 설정
+    this.camera.near = distance / 100;
+    this.camera.far = distance * 100;
     this.camera.updateProjectionMatrix();
 
+    // 컨트롤 업데이트
     this.controls.update();
+
+    console.log("Camera fitted to scene:", {
+      center: center,
+      cameraPosition: cameraPosition,
+      distance: distance,
+      boxSize: size,
+    });
   }
 
   showStatus(message) {

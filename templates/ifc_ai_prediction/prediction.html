@@ -1457,89 +1457,1553 @@
       }
     </script>
 
-    <!-- 3D 뷰어 스크립트 (dd_by_ifc에서 가져옴) -->
+    <!-- 로딩 스피너 HTML (3D 뷰어 컨테이너 안에 추가) -->
+    <div
+      id="viewer-loading"
+      style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      "
+    >
+      <div
+        style="
+          width: 40px;
+          height: 40px;
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #667eea;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 10px;
+        "
+      ></div>
+      <div style="color: #495057; font-weight: 600">모델 로딩중...</div>
+    </div>
+
+    <style>
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+
+    <!-- 로딩 스피너 HTML (3D 뷰어 컨테이너 안에 추가) -->
+    <div
+      id="viewer-loading"
+      style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      "
+    >
+      <div
+        style="
+          width: 40px;
+          height: 40px;
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #667eea;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 10px;
+        "
+      ></div>
+      <div style="color: #495057; font-weight: 600">모델 로딩중...</div>
+    </div>
+
+    <style>
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+
+    <!-- 로딩 스피너 HTML (3D 뷰어 컨테이너 안에 추가) -->
+    <div
+      id="viewer-loading"
+      style="
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      "
+    >
+      <div
+        style="
+          width: 40px;
+          height: 40px;
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #667eea;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+          margin: 0 auto 10px;
+        "
+      ></div>
+      <div style="color: #495057; font-weight: 600">모델 로딩중...</div>
+    </div>
+
+    <style>
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+
+    <!-- =========================================
+     1) 메인 로직 (AI 예측 / IFC 테이블 / 필터 & 집계)
+========================================= -->
+    <script>
+      /* =================== 전역 변수 =================== */
+      const PROJECT_ID = parseInt(document.body.dataset.projectId);
+      let objectData = [];
+      let headers = [];
+      let groupedObjects = [];
+      let selectedModel = null;
+      let sessionKey = null;
+      let inputMappings = {};
+      let loadedAIModel = null;
+      let lastPredictionData = null;
+      let currentMappingId = null;
+
+      /* =================== 초기화 =================== */
+      document.addEventListener("DOMContentLoaded", function () {
+        loadIFCObjects();
+        setupEventHandlers();
+      });
+
+      /* =================== 이벤트 핸들러 =================== */
+      function setupEventHandlers() {
+        // AI 모델 선택
+        document
+          .getElementById("aiModelSelect")
+          .addEventListener("change", loadModelInfo);
+
+        // 그룹 콤보박스
+        for (let i = 1; i <= 3; i++) {
+          document
+            .getElementById("groupBy" + i)
+            .addEventListener("change", updateGroupedTable);
+        }
+
+        // 예측 실행
+        document
+          .getElementById("predictBtn")
+          .addEventListener("click", executePrediction);
+      }
+
+      /* =================== IFC 객체 로드 =================== */
+      function loadIFCObjects() {
+        fetch(`/ifc_ai_prediction/api/project/${PROJECT_ID}/objects/`)
+          .then((response) => response.json())
+          .then((data) => {
+            objectData = data.objects;
+            headers = data.headers;
+
+            document.getElementById(
+              "objectCount"
+            ).textContent = `총 ${data.total_count}개 객체`;
+
+            updateGroupComboBoxes();
+            updateGroupedTable();
+          })
+          .catch((error) => {
+            console.error("IFC 객체 로드 실패:", error);
+            document.getElementById("objectCount").textContent = "로딩 실패";
+          });
+      }
+
+      /* =================== 그룹 콤보박스 =================== */
+      function updateGroupComboBoxes() {
+        for (let i = 1; i <= 3; i++) {
+          const combo = document.getElementById("groupBy" + i);
+          const currentValue = combo.value;
+          combo.innerHTML = `<option value="">${i}차 그룹: 없음</option>`;
+
+          headers.sort().forEach((header) => {
+            const option = document.createElement("option");
+            option.value = header;
+            option.textContent = header;
+            combo.appendChild(option);
+          });
+
+          if (currentValue && headers.includes(currentValue)) {
+            combo.value = currentValue;
+          }
+        }
+      }
+
+      /* =================== 그룹 테이블 렌더 =================== */
+      function updateGroupedTable() {
+        const tableHeaders = document.getElementById("tableHeaders");
+        const tableBody = document.getElementById("tableBody");
+
+        // 보여줄 주요 헤더
+        const mainHeaders = [
+          "GlobalId",
+          "Name",
+          "IfcClass",
+          "SpatialContainer",
+        ];
+        const visibleHeaders = headers
+          .filter(
+            (h) =>
+              mainHeaders.includes(h) ||
+              ["Area", "Volume", "Length", "Height", "Width"].some((qty) =>
+                h.includes(qty)
+              )
+          )
+          .slice(0, 8); // 최대 8개
+
+        tableHeaders.innerHTML = visibleHeaders
+          .map((h) => `<th>${h}</th>`)
+          .join("");
+
+        // 그룹 키 수집
+        const groupKeys = [];
+        for (let i = 1; i <= 3; i++) {
+          const value = document.getElementById("groupBy" + i).value;
+          if (value) groupKeys.push(value);
+        }
+
+        tableBody.innerHTML = "";
+
+        if (groupKeys.length === 0) {
+          // 그룹화 없음
+          objectData.forEach((obj) => {
+            const row = createObjectRow(obj, visibleHeaders);
+            tableBody.appendChild(row);
+          });
+        } else {
+          const groupedData = groupObjectsByKeys(objectData, groupKeys);
+          renderGroupedData(
+            tableBody,
+            groupedData,
+            0,
+            groupKeys,
+            visibleHeaders
+          );
+        }
+      }
+
+      function createObjectRow(obj, visibleHeaders) {
+        const row = document.createElement("tr");
+        row.className = "object-row";
+
+        visibleHeaders.forEach((header) => {
+          const cell = document.createElement("td");
+          let value = obj[header];
+
+          if (typeof value === "number") {
+            value = value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
+          }
+
+          cell.textContent = value || "";
+          cell.title = value || "";
+          row.appendChild(cell);
+        });
+
+        return row;
+      }
+
+      function groupObjectsByKeys(objects, keys, depth = 0) {
+        if (depth >= keys.length) return objects;
+
+        const grouped = {};
+        const key = keys[depth];
+
+        objects.forEach((obj) => {
+          let value = obj[key] || "N/A";
+          if (!grouped[value]) grouped[value] = [];
+          grouped[value].push(obj);
+        });
+
+        Object.keys(grouped).forEach((k) => {
+          grouped[k] = groupObjectsByKeys(grouped[k], keys, depth + 1);
+        });
+
+        return grouped;
+      }
+
+      function renderGroupedData(
+        tbody,
+        groupedData,
+        depth,
+        groupKeys,
+        visibleHeaders
+      ) {
+        Object.entries(groupedData).forEach(([groupValue, content]) => {
+          const groupRow = document.createElement("tr");
+          groupRow.className = "group-header";
+
+          const groupCell = document.createElement("td");
+          groupCell.colSpan = visibleHeaders.length;
+          groupCell.textContent = `${"  ".repeat(depth)}▼ ${
+            groupKeys[depth]
+          }: ${groupValue}`;
+          groupRow.appendChild(groupCell);
+
+          tbody.appendChild(groupRow);
+
+          if (Array.isArray(content)) {
+            content.forEach((obj) => {
+              const row = createObjectRow(obj, visibleHeaders);
+              tbody.appendChild(row);
+            });
+          } else {
+            renderGroupedData(
+              tbody,
+              content,
+              depth + 1,
+              groupKeys,
+              visibleHeaders
+            );
+          }
+        });
+      }
+
+      /* =================== AI 모델 로드/정보 =================== */
+      function loadModelInfo() {
+        const modelId = document.getElementById("aiModelSelect").value;
+
+        if (!modelId) {
+          document.getElementById("modelInfo").classList.add("hidden");
+          document
+            .getElementById("inputMappingSection")
+            .classList.add("hidden");
+          return;
+        }
+
+        fetch(`/ifc_ai_prediction/api/model/${modelId}/metadata/`)
+          .then((response) => response.json())
+          .then((data) => {
+            selectedModel = data;
+            displayModelInfo(data);
+            loadAIModel(data);
+            createInputMappingUI(data);
+          })
+          .catch((error) => {
+            console.error("모델 정보 로드 실패:", error);
+            alert("모델 정보를 로드할 수 없습니다.");
+          });
+      }
+
+      async function loadAIModel(modelMetadata) {
+        try {
+          const modelResponse = await fetch(modelMetadata.model_file_url);
+          const zipBlob = await modelResponse.blob();
+
+          const zip = new JSZip();
+          const zipContent = await zip.loadAsync(zipBlob);
+
+          const modelJson = await zipContent.file("model.json").async("string");
+          const modelTopology = JSON.parse(modelJson);
+
+          const weightsData = await zipContent
+            .file("weights.bin")
+            .async("uint8array");
+
+          loadedAIModel = await tf.loadLayersModel(
+            tf.io.fromMemory(modelTopology, weightsData)
+          );
+
+          console.log("✅ AI 모델 로드 완료");
+          updatePredictButton();
+        } catch (error) {
+          console.error("❌ AI 모델 로드 실패:", error);
+          alert("AI 모델을 로드할 수 없습니다: " + error.message);
+        }
+      }
+
+      function displayModelInfo(model) {
+        const details = `
+    <div style="background: #f8f9fa; padding: 12px; border-radius: 4px; font-size: 13px;">
+      <strong>설명:</strong> ${model.description || "없음"}<br>
+      <strong>입력 변수:</strong> ${model.input_columns.join(", ")}<br>
+      <strong>출력 변수:</strong> ${model.output_columns.join(", ")}<br>
+      ${model.rmse ? `<strong>RMSE:</strong> ${model.rmse.toFixed(4)}<br>` : ""}
+      ${model.mae ? `<strong>MAE:</strong> ${model.mae.toFixed(4)}<br>` : ""}
+      ${
+        model.r2_score
+          ? `<strong>R² 점수:</strong> ${model.r2_score.toFixed(4)}`
+          : ""
+      }
+    </div>
+  `;
+        document.getElementById("modelDetails").innerHTML = details;
+        document.getElementById("modelInfo").classList.remove("hidden");
+      }
+
+      /* =================== 입력 매핑 UI =================== */
+      function createInputMappingUI(model) {
+        const container = document.getElementById("inputMappingContainer");
+        container.innerHTML = "";
+        inputMappings = {};
+
+        model.input_columns.forEach((column, index) => {
+          const inputDiv = document.createElement("div");
+          inputDiv.className = "input-item";
+          inputDiv.innerHTML = `
+      <div class="input-header">${column}</div>
+
+      <div class="mapping-type-selector">
+        <label><input type="radio" name="type_${index}" value="manual" checked> 직접 입력</label>
+        <label><input type="radio" name="type_${index}" value="ifc_aggregation"> IFC 객체 집계</label>
+      </div>
+
+      <div class="manual-input-container">
+        <input type="number" class="manual-input" data-column="${column}" placeholder="값을 입력하세요" step="any">
+      </div>
+
+      <div class="ifc-aggregation-container hidden">
+        <div class="filter-conditions" data-column="${column}"></div>
+        <button type="button" class="btn-small btn-add" onclick="addFilterCondition('${column}')">+ 조건 추가</button>
+
+        <div class="aggregation-controls">
+          <div class="aggregation-row">
+            <select class="aggregation-attribute" data-column="${column}">
+              <option value="">집계할 속성 선택</option>
+              ${headers
+                .map((h) => `<option value="${h}">${h}</option>`)
+                .join("")}
+            </select>
+            <select class="aggregation-function" data-column="${column}">
+              <option value="sum">합계</option>
+              <option value="count">개수</option>
+              <option value="avg">평균</option>
+              <option value="min">최솟값</option>
+              <option value="max">최댓값</option>
+            </select>
+            <button type="button" class="btn-small btn-test" onclick="testAggregation('${column}')">테스트</button>
+          </div>
+          <div class="aggregation-result hidden" data-column="${column}"></div>
+        </div>
+      </div>
+    `;
+          container.appendChild(inputDiv);
+
+          // 라디오 버튼 변경
+          inputDiv
+            .querySelectorAll(`input[name="type_${index}"]`)
+            .forEach((radio) => {
+              radio.addEventListener("change", function () {
+                const manualContainer = inputDiv.querySelector(
+                  ".manual-input-container"
+                );
+                const ifcContainer = inputDiv.querySelector(
+                  ".ifc-aggregation-container"
+                );
+
+                if (this.value === "manual") {
+                  manualContainer.classList.remove("hidden");
+                  ifcContainer.classList.add("hidden");
+                } else {
+                  manualContainer.classList.add("hidden");
+                  ifcContainer.classList.remove("hidden");
+                }
+                updateInputMapping(column);
+              });
+            });
+
+          // 직접 입력
+          inputDiv
+            .querySelector(".manual-input")
+            .addEventListener("input", function () {
+              updateInputMapping(column);
+            });
+
+          // 집계 설정
+          inputDiv
+            .querySelector(".aggregation-attribute")
+            .addEventListener("change", function () {
+              updateInputMapping(column);
+            });
+          inputDiv
+            .querySelector(".aggregation-function")
+            .addEventListener("change", function () {
+              updateInputMapping(column);
+            });
+
+          // 초기 설정
+          updateInputMapping(column);
+        });
+
+        document
+          .getElementById("inputMappingSection")
+          .classList.remove("hidden");
+        updatePredictButton();
+      }
+
+      function updateInputMapping(column) {
+        const inputDiv = document
+          .querySelector(`[data-column="${column}"]`)
+          .closest(".input-item");
+        const type = inputDiv.querySelector(
+          'input[name^="type_"]:checked'
+        ).value;
+
+        if (type === "manual") {
+          const value = inputDiv.querySelector(".manual-input").value;
+          inputMappings[column] = { type: "manual", value: value || 0 };
+        } else {
+          const attribute = inputDiv.querySelector(
+            ".aggregation-attribute"
+          ).value;
+          const func = inputDiv.querySelector(".aggregation-function").value;
+
+          inputMappings[column] = {
+            type: "ifc_aggregation",
+            aggregation_attribute: attribute,
+            aggregation_function: func,
+            filters: [],
+          };
+        }
+
+        updatePredictButton();
+      }
+
+      /* =================== 필터 조건 =================== */
+      function addFilterCondition(column) {
+        const container = document.querySelector(
+          `.filter-conditions[data-column="${column}"]`
+        );
+        const conditionDiv = document.createElement("div");
+        conditionDiv.className = "filter-condition";
+
+        const conditionCount = container.children.length;
+        const relationHtml =
+          conditionCount > 0
+            ? `<select class="relation-select"><option value="and">그리고</option><option value="or">또는</option></select>`
+            : "";
+
+        conditionDiv.innerHTML = `
+    ${relationHtml}
+    <div class="filter-row">
+      <select class="attribute-select">
+        <option value="">속성 선택</option>
+        ${headers.map((h) => `<option value="${h}">${h}</option>`).join("")}
+      </select>
+      <input type="text" class="value-input" placeholder="속성값">
+      <select class="condition-select">
+        <option value="equals">같음</option>
+        <option value="contains">포함</option>
+        <option value="starts_with">시작함</option>
+        <option value="ends_with">끝남</option>
+        <option value="greater_than">보다 큼</option>
+        <option value="less_than">보다 작음</option>
+        <option value="greater_equal">크거나 같음</option>
+        <option value="less_equal">작거나 같음</option>
+      </select>
+      <button type="button" class="btn-small btn-remove" onclick="removeFilterCondition(this)">-</button>
+    </div>
+  `;
+
+        container.appendChild(conditionDiv);
+      }
+
+      function removeFilterCondition(button) {
+        button.closest(".filter-condition").remove();
+      }
+
+      /* =================== 집계 테스트 =================== */
+      function testAggregation(column) {
+        const inputDiv = document
+          .querySelector(`[data-column="${column}"]`)
+          .closest(".input-item");
+        const attribute = inputDiv.querySelector(
+          ".aggregation-attribute"
+        ).value;
+        const func = inputDiv.querySelector(".aggregation-function").value;
+
+        if (!attribute) {
+          alert("집계할 속성을 선택하세요.");
+          return;
+        }
+
+        const conditions = [];
+        const filterContainer = inputDiv.querySelector(".filter-conditions");
+
+        filterContainer
+          .querySelectorAll(".filter-condition")
+          .forEach((condition, index) => {
+            const attrSelect = condition.querySelector(".attribute-select");
+            const condSelect = condition.querySelector(".condition-select");
+            const valueInput = condition.querySelector(".value-input");
+            const relationSelect = condition.querySelector(".relation-select");
+
+            if (attrSelect.value && condSelect.value && valueInput.value) {
+              conditions.push({
+                attribute_name: attrSelect.value,
+                condition: condSelect.value,
+                value: valueInput.value,
+                relation: index > 0 ? relationSelect.value : "and",
+              });
+            }
+          });
+
+        // 필터 저장
+        fetch("/ifc_ai_prediction/api/filters/save/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_key: sessionKey,
+            conditions: conditions,
+          }),
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            sessionKey = data.session_key;
+
+            return fetch(
+              `/ifc_ai_prediction/api/project/${PROJECT_ID}/test-aggregation/`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  filter_session_key: sessionKey,
+                  aggregation_attribute: attribute,
+                  aggregation_function: func,
+                }),
+              }
+            );
+          })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              const resultDiv = inputDiv.querySelector(
+                `.aggregation-result[data-column="${column}"]`
+              );
+              resultDiv.innerHTML = `
+          <strong>결과:</strong> ${data.result.toLocaleString("ko-KR", {
+            maximumFractionDigits: 2,
+          })}<br>
+          <small>필터링된 객체: ${data.filtered_count}개, 집계된 값: ${
+                data.values_count
+              }개</small>
+        `;
+              resultDiv.classList.remove("hidden");
+            } else {
+              alert("집계 테스트 실패: " + data.error);
+            }
+          })
+          .catch((error) => {
+            console.error("집계 테스트 실패:", error);
+            alert("집계 테스트 중 오류가 발생했습니다.");
+          });
+      }
+
+      /* =================== 예측 =================== */
+      function updatePredictButton() {
+        const btn = document.getElementById("predictBtn");
+        const allInputsValid =
+          Object.keys(inputMappings).length ===
+          (selectedModel?.input_columns.length || 0);
+        btn.disabled = !allInputsValid || !loadedAIModel;
+      }
+
+      function executePrediction() {
+        if (!selectedModel || !loadedAIModel) {
+          alert("AI 모델을 선택하고 로드를 완료하세요.");
+          return;
+        }
+
+        const btn = document.getElementById("predictBtn");
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 예측 중...';
+
+        fetch(
+          `/ifc_ai_prediction/api/project/${PROJECT_ID}/execute-prediction/`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ai_model_id: selectedModel.id,
+              input_mappings: inputMappings,
+            }),
+          }
+        )
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.success) {
+              currentMappingId = data.mapping_id;
+              performPrediction(data.input_values, data.execution_time);
+            } else {
+              throw new Error(data.error);
+            }
+          })
+          .catch((error) => {
+            console.error("예측 실행 실패:", error);
+            alert("예측 실행 중 오류가 발생했습니다: " + error.message);
+
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-brain"></i> 예측 실행';
+          });
+      }
+
+      async function performPrediction(inputValues, executionTime) {
+        try {
+          const inputArray = selectedModel.input_columns.map(
+            (col) => inputValues[col] || 0
+          );
+          const inputTensor = tf.tensor2d([inputArray]);
+
+          const prediction = await loadedAIModel.predict(inputTensor);
+          const predictionArray = await prediction.data();
+          const predictionValue = predictionArray[0];
+
+          const errorRange = calculateErrorRange(predictionValue);
+
+          displayPredictionResult(
+            predictionValue,
+            errorRange,
+            inputValues,
+            executionTime
+          );
+          await savePrediction(inputValues, predictionValue, errorRange);
+
+          inputTensor.dispose();
+          prediction.dispose();
+        } catch (error) {
+          console.error("예측 수행 실패:", error);
+          alert("예측 수행 중 오류가 발생했습니다: " + error.message);
+        } finally {
+          const btn = document.getElementById("predictBtn");
+          btn.disabled = false;
+          btn.innerHTML = '<i class="fas fa-brain"></i> 예측 실행';
+        }
+      }
+
+      function calculateErrorRange(prediction) {
+        const rmse = selectedModel.rmse || 0;
+        const errorMargin = rmse * 1.5;
+
+        return {
+          min: Math.max(0, prediction - errorMargin),
+          max: prediction + errorMargin,
+          confidence: Math.max(0, Math.min(1, 1 - rmse / (prediction || 1e-9))),
+        };
+      }
+
+      function displayPredictionResult(
+        prediction,
+        errorRange,
+        inputValues,
+        executionTime
+      ) {
+        const resultContent = document.getElementById("resultContent");
+
+        lastPredictionData = {
+          input_values: inputValues,
+          prediction_result: { value: prediction },
+          prediction_range: errorRange,
+        };
+
+        resultContent.innerHTML = `
+    <div class="prediction-result">
+      <h5 style="margin-bottom: 15px; color: #0c5460;">
+        <i class="fas fa-chart-line"></i> 예측 결과
+      </h5>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+        <div>
+          <strong>예측값:</strong><br>
+          <span style="font-size: 1.4em; color: #28a745;">
+            ${prediction.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}
+          </span>
+        </div>
+        <div>
+          <strong>신뢰도:</strong><br>
+          <span style="font-size: 1.4em; color: #17a2b8;">
+            ${(errorRange.confidence * 100).toFixed(1)}%
+          </span>
+        </div>
+      </div>
+
+      <div style="background: rgba(255,255,255,0.7); padding: 10px; border-radius: 4px;">
+        <strong>예측 범위:</strong><br>
+        최솟값: ${errorRange.min.toLocaleString("ko-KR", {
+          maximumFractionDigits: 2,
+        })}<br>
+        최댓값: ${errorRange.max.toLocaleString("ko-KR", {
+          maximumFractionDigits: 2,
+        })}<br>
+        오차 범위: ±${((errorRange.max - errorRange.min) / 2).toLocaleString(
+          "ko-KR",
+          { maximumFractionDigits: 2 }
+        )}
+      </div>
+    </div>
+
+    <div style="margin-top: 15px;">
+      <h6>입력값 요약</h6>
+      <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 13px;">
+        ${Object.entries(inputValues)
+          .map(
+            ([key, value]) =>
+              `<div>${key}: ${value.toLocaleString("ko-KR", {
+                maximumFractionDigits: 2,
+              })}</div>`
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+
+        document.getElementById("predictionResult").classList.remove("hidden");
+        createResultChart(prediction, errorRange);
+      }
+
+      function createResultChart(result, range) {
+        const chartContainer = document.getElementById("resultChart");
+        chartContainer.innerHTML =
+          '<canvas id="resultCanvas" width="300" height="200"></canvas>';
+
+        const ctx = document.getElementById("resultCanvas").getContext("2d");
+
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: ["최솟값", "예측값", "최댓값"],
+            datasets: [
+              {
+                label: "예측 결과",
+                data: [range.min, result, range.max],
+                backgroundColor: [
+                  "rgba(255, 193, 7, 0.8)",
+                  "rgba(40, 167, 69, 0.8)",
+                  "rgba(220, 53, 69, 0.8)",
+                ],
+                borderColor: [
+                  "rgba(255, 193, 7, 1)",
+                  "rgba(40, 167, 69, 1)",
+                  "rgba(220, 53, 69, 1)",
+                ],
+                borderWidth: 2,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            scales: { y: { beginAtZero: false } },
+            plugins: { legend: { display: false } },
+          },
+        });
+      }
+
+      async function savePrediction(inputValues, prediction, errorRange) {
+        if (!currentMappingId) return;
+
+        try {
+          await fetch(
+            `/ifc_ai_prediction/api/mapping/${currentMappingId}/save-result/`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                input_values: inputValues,
+                prediction_result: { value: prediction },
+                prediction_range: errorRange,
+                execution_time: 0,
+              }),
+            }
+          );
+        } catch (error) {
+          console.error("예측 결과 저장 실패:", error);
+        }
+      }
+
+      /* =================== PDF 다운로드 =================== */
+      function downloadPredictionPDF() {
+        if (!lastPredictionData || !currentMappingId) {
+          alert("예측을 먼저 실행해주세요.");
+          return;
+        }
+
+        const btn = document.getElementById("downloadPdfBtn");
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML =
+          '<span class="spinner-border spinner-border-sm" role="status"></span> PDF 생성 중...';
+        btn.disabled = true;
+
+        try {
+          const chartImage = getChartAsImage();
+
+          fetch(
+            `/ifc_ai_prediction/api/mapping/${currentMappingId}/generate-pdf/1/`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                input_data: lastPredictionData.input_values,
+                prediction_result: lastPredictionData.prediction_result,
+                prediction_range: lastPredictionData.prediction_range,
+                chart_image: chartImage,
+              }),
+            }
+          )
+            .then((response) => {
+              if (!response.ok) throw new Error("PDF 생성 실패");
+              return response.blob();
+            })
+            .then((blob) => {
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `ifc_ai_prediction_${new Date()
+                .toISOString()
+                .slice(0, 10)}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            })
+            .catch((error) => {
+              console.error("PDF 다운로드 오류:", error);
+              alert("PDF 다운로드 중 오류가 발생했습니다.");
+            })
+            .finally(() => {
+              btn.innerHTML = originalHtml;
+              btn.disabled = false;
+            });
+        } catch (error) {
+          console.error("PDF 처리 오류:", error);
+          alert("PDF 처리 중 오류가 발생했습니다.");
+          btn.innerHTML = originalHtml;
+          btn.disabled = false;
+        }
+      }
+
+      function getChartAsImage() {
+        try {
+          const canvas = document.getElementById("resultCanvas");
+          if (!canvas) return "";
+          return canvas.toDataURL("image/png");
+        } catch (error) {
+          console.error("차트 이미지 변환 오류:", error);
+          return "";
+        }
+      }
+    </script>
+
+    <!-- =========================================
+     2) 3D Viewer (three.js + IfcOpenShell WASM)
+========================================= -->
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-      const viewDiv = document.getElementById("viewer");
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(
-        60,
-        viewDiv.clientWidth / viewDiv.clientHeight,
-        0.1,
-        10000
-      );
-      const renderer = new THREE.WebGLRenderer({
-        antialias: true,
-        alpha: true,
-      });
-      renderer.setSize(viewDiv.clientWidth, viewDiv.clientHeight);
-      viewDiv.appendChild(renderer.domElement);
+      /* ===================== 유틸: 옛 스피너 제거 ===================== */
+      function hideLegacySpinners() {
+        document
+          .querySelectorAll("#viewer-loading")
+          .forEach((el) => el.remove());
+      }
 
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
+      /* ===================== IFCViewer3D 클래스 ===================== */
+      class IFCViewer3D {
+        constructor(containerId) {
+          this.container = document.getElementById(containerId);
+          this.loadingElement = null;
+          this.scene = null;
+          this.camera = null;
+          this.renderer = null;
+          this.controls = null;
+          this.modelGroup = null;
+          this.isInitialized = false;
 
-      /* ★★★ 여기부터 추가/수정 – Z축을 위로 고정 & 모델 루트 그룹 생성 ★★★ */
-      THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1); // three 기본업을 Z로
-      camera.up.set(0, 0, 1); // 카메라 업벡터도 Z로
-      controls.object.up.set(0, 0, 1); // 컨트롤 대상 업벡터
-      controls.update();
+          // 선택 관련
+          this.raycaster = new THREE.Raycaster();
+          this.mouse = new THREE.Vector2();
+          this.selectedObject = null;
+          this.originalMaterial = null;
+          this.highlightMaterial = null;
+          this.isDragging = false;
 
-      const MODEL_ROOT = new THREE.Group(); // 모델 담을 루트
-      scene.add(MODEL_ROOT);
-      /* ★★★ 여기까지 ★★★ */
+          this.init();
+        }
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-      dir.position.set(10, 10, 10);
-      scene.add(dir);
+        init() {
+          // 씬
+          this.scene = new THREE.Scene();
+          this.scene.background = new THREE.Color(0xf5f5f5);
 
-      camera.position.set(10, 10, 10);
+          // 카메라
+          const aspect =
+            this.container.clientWidth / this.container.clientHeight;
+          this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 5000);
+          this.camera.position.set(30, 25, 30);
 
-      // IFC 로드 및 표시
+          // 렌더러
+          this.renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: false,
+            powerPreference: "high-performance",
+          });
+          this.renderer.setSize(
+            this.container.clientWidth,
+            this.container.clientHeight
+          );
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+          this.renderer.shadowMap.enabled = true;
+          this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+          this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+          this.renderer.toneMappingExposure = 1.0;
+          this.container.appendChild(this.renderer.domElement);
+
+          // 모델 그룹
+          this.modelGroup = new THREE.Group();
+          this.scene.add(this.modelGroup);
+
+          // 하이라이트 재질
+          this.highlightMaterial = new THREE.MeshLambertMaterial({
+            color: 0xff6b35,
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide,
+          });
+
+          // 조명, 컨트롤, 이벤트
+          this.setupLighting();
+          this.setupControls();
+          this.setupEventListeners();
+
+          // 루프
+          this.animate();
+
+          this.isInitialized = true;
+          console.log("✅ 3D 뷰어 초기화 완료");
+        }
+
+        showLoading(show, message = "모델 로딩중...") {
+          if (show) {
+            if (!this.loadingElement) {
+              this.loadingElement = document.createElement("div");
+              this.loadingElement.id = "ifc-viewer-loading";
+              this.loadingElement.style.cssText = `
+          position: absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+          z-index:1000; text-align:center; background:rgba(255,255,255,0.9);
+          padding:20px; border-radius:8px; box-shadow:0 4px 8px rgba(0,0,0,0.1);
+          font-family: Arial, sans-serif;
+        `;
+              this.loadingElement.innerHTML = `
+          <div style="width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 10px;"></div>
+          <div style="color:#495057;font-weight:600;" id="loading-text">${message}</div>
+          <style>
+            @keyframes spin { 0%{transform:rotate(0deg);}100%{transform:rotate(360deg);} }
+          </style>
+        `;
+              this.container.appendChild(this.loadingElement);
+            } else {
+              this.loadingElement.querySelector("#loading-text").textContent =
+                message;
+              this.loadingElement.style.display = "block";
+            }
+          } else {
+            if (this.loadingElement) this.loadingElement.style.display = "none";
+            hideLegacySpinners(); // 혹시 남아있는 구버전 스피너 제거
+          }
+        }
+
+        setupLighting() {
+          const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+          this.scene.add(ambientLight);
+
+          const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+          directionalLight.position.set(50, 50, 25);
+          directionalLight.castShadow = true;
+          directionalLight.shadow.mapSize.width = 2048;
+          directionalLight.shadow.mapSize.height = 2048;
+          directionalLight.shadow.camera.near = 0.5;
+          directionalLight.shadow.camera.far = 200;
+          directionalLight.shadow.camera.left = -50;
+          directionalLight.shadow.camera.right = 50;
+          directionalLight.shadow.camera.top = 50;
+          directionalLight.shadow.camera.bottom = -50;
+          this.scene.add(directionalLight);
+
+          const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+          fillLight.position.set(-25, 20, -25);
+          this.scene.add(fillLight);
+
+          const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
+          rimLight.position.set(0, 10, -50);
+          this.scene.add(rimLight);
+        }
+
+        setupControls() {
+          this.controls = new OrbitControls(
+            this.camera,
+            this.renderer.domElement
+          );
+
+          this.controls.enableDamping = true;
+          this.controls.dampingFactor = 0.08;
+          this.controls.screenSpacePanning = false;
+
+          // 회전
+          this.controls.enableRotate = true;
+          this.controls.rotateSpeed = 0.6;
+          this.controls.minPolarAngle = 0.1;
+          this.controls.maxPolarAngle = Math.PI - 0.1;
+
+          // 줌은 직접 구현
+          this.controls.enableZoom = false;
+          this.controls.minDistance = 5;
+          this.controls.maxDistance = 500;
+
+          // 팬
+          this.controls.enablePan = true;
+          this.controls.panSpeed = 0.8;
+          this.controls.keyPanSpeed = 15.0;
+
+          this.controls.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          };
+          this.controls.touches = {
+            ONE: THREE.TOUCH.ROTATE,
+            TWO: THREE.TOUCH.DOLLY_PAN,
+          };
+          this.controls.autoRotate = false;
+          this.controls.autoRotateSpeed = 1.0;
+        }
+
+        setupEventListeners() {
+          window.addEventListener("resize", () => this.handleResize());
+          this.container.addEventListener("contextmenu", (e) =>
+            e.preventDefault()
+          );
+          this.renderer.domElement.addEventListener("click", () => {
+            this.renderer.domElement.focus();
+          });
+          this.renderer.domElement.tabIndex = 0;
+
+          this.renderer.domElement.addEventListener("mousedown", (e) =>
+            this.onMouseDown(e)
+          );
+          this.renderer.domElement.addEventListener("mousemove", (e) =>
+            this.onMouseMove(e)
+          );
+          this.renderer.domElement.addEventListener("mouseup", (e) =>
+            this.onMouseUp(e)
+          );
+          this.renderer.domElement.addEventListener("click", (e) =>
+            this.onMouseClick(e)
+          );
+          this.renderer.domElement.addEventListener("wheel", (e) =>
+            this.onMouseWheel(e)
+          );
+
+          window.addEventListener("keydown", (event) => {
+            if (event.code === "Escape") this.clearSelection();
+          });
+        }
+
+        handleResize() {
+          const width = this.container.clientWidth;
+          const height = this.container.clientHeight;
+          this.camera.aspect = width / height;
+          this.camera.updateProjectionMatrix();
+          this.renderer.setSize(width, height);
+          this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        }
+
+        animate() {
+          requestAnimationFrame(() => this.animate());
+          if (this.controls) this.controls.update();
+          if (this.renderer && this.scene && this.camera) {
+            this.renderer.render(this.scene, this.camera);
+          }
+        }
+
+        // IFCViewer3D 클래스 내부의 기존 onMouseWheel(event) 를 전부 이걸로 교체
+        onMouseWheel(event) {
+          event.preventDefault();
+
+          // 줌 배율 (휠 한 번당 10% 정도)
+          const zoomScale = event.deltaY > 0 ? 1.1 : 0.9;
+
+          // 현재 마우스 위치를 정규화 좌표로 갱신
+          this.updateMousePosition(event);
+
+          // 레이캐스트로 마우스가 가리키는 3D 위치 계산
+          this.raycaster.setFromCamera(this.mouse, this.camera);
+          const intersects = this.raycaster.intersectObjects(
+            this.modelGroup.children,
+            true
+          );
+
+          // 교차 지점이 있으면 거기를 기준점으로, 없으면 카메라 타깃(controls.target)을 기준으로 사용
+          const pivot =
+            intersects.length > 0
+              ? intersects[0].point.clone()
+              : this.controls.target.clone();
+
+          // 카메라 위치를 pivot을 기준으로 스케일링
+          const camToPivot = new THREE.Vector3().subVectors(
+            this.camera.position,
+            pivot
+          );
+          camToPivot.multiplyScalar(zoomScale);
+          const newCamPos = new THREE.Vector3().addVectors(pivot, camToPivot);
+
+          // 거리 제한(OrbitControls의 min/maxDistance 준수)
+          const distToTarget = newCamPos.distanceTo(this.controls.target);
+          const clampedDist = THREE.MathUtils.clamp(
+            distToTarget,
+            this.controls.minDistance,
+            this.controls.maxDistance
+          );
+
+          // 만약 제한에 걸린다면 방향은 유지하고 거리만 보정
+          if (distToTarget !== clampedDist) {
+            const dir = new THREE.Vector3()
+              .subVectors(newCamPos, this.controls.target)
+              .normalize();
+            newCamPos
+              .copy(this.controls.target)
+              .add(dir.multiplyScalar(clampedDist));
+          }
+
+          // 카메라 이동
+          this.camera.position.copy(newCamPos);
+
+          // 회전 중심(controls.target)은 건드리지 않으므로 화면 회전 중심은 기존 그대로 유지됩니다.
+          this.controls.update();
+        }
+
+        onMouseDown(event) {
+          this.isDragging = false;
+          this.updateMousePosition(event);
+        }
+
+        onMouseMove(event) {
+          if (event.buttons > 0) this.isDragging = true;
+          this.updateMousePosition(event);
+        }
+
+        onMouseUp() {
+          if (this.isDragging) {
+            this.isDragging = false;
+            return;
+          }
+        }
+
+        updateMousePosition(event) {
+          const rect = this.renderer.domElement.getBoundingClientRect();
+          this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+          this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        }
+
+        onMouseClick(event) {
+          if (this.isDragging || event.button !== 0) return;
+
+          this.updateMousePosition(event);
+          this.raycaster.setFromCamera(this.mouse, this.camera);
+
+          const intersects = this.raycaster.intersectObjects(
+            this.modelGroup.children,
+            true
+          );
+          if (intersects.length > 0) {
+            const clickedObject = intersects[0].object;
+
+            let targetGroup = clickedObject;
+            while (
+              targetGroup.parent &&
+              targetGroup.parent !== this.modelGroup
+            ) {
+              targetGroup = targetGroup.parent;
+            }
+
+            this.selectObject(targetGroup, intersects[0].point);
+            console.log(
+              "🎯 클릭된 객체:",
+              clickedObject.type,
+              "최상위 그룹:",
+              targetGroup.type
+            );
+          } else {
+            this.clearSelection();
+          }
+        }
+
+        selectObject(object, intersectionPoint) {
+          this.clearSelection();
+          this.selectedObject = object;
+
+          let meshToHighlight = object;
+          if (object.type === "Group" && object.children.length > 0) {
+            meshToHighlight = object.children[0];
+          }
+
+          this.originalMaterial = meshToHighlight.material;
+          meshToHighlight.material = this.highlightMaterial;
+        }
+
+        clearSelection() {
+          if (this.selectedObject && this.originalMaterial) {
+            let meshToRestore = this.selectedObject;
+            if (
+              this.selectedObject.type === "Group" &&
+              this.selectedObject.children.length > 0
+            ) {
+              meshToRestore = this.selectedObject.children[0];
+            }
+            meshToRestore.material = this.originalMaterial;
+          }
+          this.selectedObject = null;
+          this.originalMaterial = null;
+        }
+
+        addModelWithEdges(geometry, originalMaterial, userData) {
+          const grayColor = new THREE.Color(0.502, 0.502, 0.502);
+
+          let finalMaterial;
+          if (
+            originalMaterial &&
+            originalMaterial.color &&
+            !originalMaterial.color.equals(new THREE.Color(1, 1, 1)) &&
+            !originalMaterial.color.equals(new THREE.Color(0, 0, 0))
+          ) {
+            finalMaterial = originalMaterial.clone();
+          } else {
+            finalMaterial = new THREE.MeshLambertMaterial({
+              color: grayColor,
+              side: THREE.DoubleSide,
+              transparent: originalMaterial
+                ? originalMaterial.transparent
+                : false,
+              opacity: originalMaterial ? originalMaterial.opacity : 1.0,
+            });
+          }
+
+          const mesh = new THREE.Mesh(geometry, finalMaterial);
+          mesh.userData = userData;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+
+          const edges = new THREE.EdgesGeometry(geometry);
+          const edgeMaterial = new THREE.LineBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.4,
+            linewidth: 1,
+          });
+          const wireframe = new THREE.LineSegments(edges, edgeMaterial);
+          wireframe.userData = userData;
+
+          const group = new THREE.Group();
+          group.add(mesh);
+          group.add(wireframe);
+          group.userData = userData;
+
+          return group;
+        }
+
+        addModel(object) {
+          if (this.modelGroup) this.modelGroup.add(object);
+        }
+
+        clearModels() {
+          this.clearSelection();
+          if (this.modelGroup) {
+            while (this.modelGroup.children.length > 0) {
+              const child = this.modelGroup.children[0];
+              if (child.geometry) child.geometry.dispose();
+              if (child.material) {
+                if (Array.isArray(child.material))
+                  child.material.forEach((mat) => mat.dispose());
+                else child.material.dispose();
+              }
+              this.modelGroup.remove(child);
+            }
+          }
+        }
+
+        fitCameraToModel() {
+          if (!this.modelGroup || this.modelGroup.children.length === 0) {
+            this.camera.position.set(30, 25, 30);
+            this.camera.lookAt(0, 0, 0);
+            this.controls.target.set(0, 0, 0);
+            this.controls.update();
+            return;
+          }
+
+          const box = new THREE.Box3().setFromObject(this.modelGroup);
+          const center = box.getCenter(new THREE.Vector3());
+          const size = box.getSize(new THREE.Vector3());
+
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const fov = this.camera.fov * (Math.PI / 180);
+          const distance = Math.abs(maxDim / (2 * Math.tan(fov / 2)));
+          const finalDistance = distance * 1.5;
+
+          const phi = Math.PI / 6;
+          const theta = Math.PI / 4;
+
+          const x = center.x + finalDistance * Math.sin(phi) * Math.cos(theta);
+          const y = center.y + finalDistance * Math.cos(phi);
+          const z = center.z + finalDistance * Math.sin(phi) * Math.sin(theta);
+
+          this.camera.position.set(x, y, z);
+          this.camera.lookAt(center);
+
+          this.controls.target.copy(center);
+          this.controls.minDistance = finalDistance * 0.1;
+          this.controls.maxDistance = finalDistance * 5;
+          this.controls.update();
+
+          console.log("카메라 조정:", {
+            center,
+            size,
+            distance: finalDistance,
+            cameraPos: { x, y, z },
+          });
+        }
+
+        resetView() {
+          this.fitCameraToModel();
+        }
+
+        toggleAutoRotate() {
+          this.controls.autoRotate = !this.controls.autoRotate;
+          return this.controls.autoRotate;
+        }
+
+        toggleWireframe() {
+          this.modelGroup.traverse((child) => {
+            if (
+              child.type === "Mesh" &&
+              child.material &&
+              child.material.wireframe !== undefined
+            ) {
+              child.material.wireframe = !child.material.wireframe;
+            }
+          });
+        }
+
+        getSelectedObject() {
+          return this.selectedObject
+            ? {
+                object: this.selectedObject,
+                userData: this.selectedObject.userData,
+                target: this.controls.target.clone(),
+              }
+            : null;
+        }
+      }
+
+      /* ===================== IFC 로딩 ===================== */
+      const viewer = new IFCViewer3D("viewer");
+      window.ifcViewer = viewer; // 전역 접근
+
       const IFC_URL = "{{ ifc_abs_url }}";
       const WHEEL_URL =
         "{% static 'wasm/IfcOpenShell-0.7.0-py3-none-any.whl' %}";
 
+      function showLoadingStatus(message) {
+        console.log("🔄 " + message);
+        viewer.showLoading(true, message);
+      }
+
       (async () => {
+        // 중복 스피너 제거
+        hideLegacySpinners();
+
         try {
+          showLoadingStatus("Pyodide 초기화 중...");
+
           const pyodide = await loadPyodide();
           await pyodide.loadPackage("micropip");
           const micropip = pyodide.pyimport("micropip");
+
+          showLoadingStatus("IfcOpenShell 설치 중...");
           await micropip.install(WHEEL_URL);
 
+          showLoadingStatus("IFC 파일 다운로드 중...");
           const ifcText = await (await fetch(IFC_URL)).text();
 
+          showLoadingStatus("IFC 파일 파싱 중...");
           const ifcopenshell = pyodide.pyimport("ifcopenshell");
           const ifc = ifcopenshell.file.from_string(ifcText);
           const ifcopenshell_geom = pyodide.pyimport("ifcopenshell.geom");
-          const s = ifcopenshell_geom.settings();
-          s.set(s.WELD_VERTICES, false);
 
-          const it = ifcopenshell_geom.iterator(s, ifc);
+          const settings = ifcopenshell_geom.settings();
+          settings.set(settings.WELD_VERTICES, false);
 
-          if (it.initialize()) {
+          const iterator = ifcopenshell_geom.iterator(settings, ifc);
+
+          if (iterator.initialize()) {
+            showLoadingStatus("3D 지오메트리 생성 중...");
+
             let geometries = [];
             let lastMeshId = null;
+            let processedCount = 0;
 
             while (true) {
-              const obj = it.get();
-              const ty = ifc.by_id(obj.id).is_a();
+              const obj = iterator.get();
+              const elementType = ifc.by_id(obj.id).is_a();
 
-              if (ty !== "IfcOpeningElement" && ty !== "IfcSpace") {
+              if (
+                elementType !== "IfcOpeningElement" &&
+                elementType !== "IfcSpace"
+              ) {
                 if (lastMeshId !== obj.geometry.id) {
                   geometries = [];
 
-                  const materials = obj.geometry.materials.toJs().map(
-                    (e) =>
-                      new THREE.MeshLambertMaterial({
-                        color: new THREE.Color(...e.diffuse.toJs()),
-                        opacity: 1.0 - e.transparency,
-                        transparent: e.transparency > 1e-5,
-                        side: THREE.DoubleSide,
-                      })
-                  );
+                  const materials = obj.geometry.materials.toJs().map((mat) => {
+                    const diffuse = mat.diffuse.toJs();
+                    let hasValidColor = false;
+                    if (diffuse.length === 3) {
+                      const [r, g, b] = diffuse;
+                      hasValidColor = !(
+                        (r === 1 && g === 1 && b === 1) ||
+                        (r === 0 && g === 0 && b === 0)
+                      );
+                    }
+
+                    return new THREE.MeshLambertMaterial({
+                      color: hasValidColor
+                        ? new THREE.Color(...diffuse)
+                        : new THREE.Color(0.502, 0.502, 0.502),
+                      opacity: 1.0 - mat.transparency,
+                      transparent: mat.transparency > 1e-5,
+                      side: THREE.DoubleSide,
+                    });
+                  });
 
                   const mapping = {};
                   obj.geometry.material_ids.toJs().forEach((mid, idx) => {
@@ -1547,124 +3011,182 @@
                     mapping[mid].push(idx);
                   });
 
-                  const vs = new Float32Array(obj.geometry.verts.toJs());
-                  const ns = new Float32Array(obj.geometry.normals.toJs());
-                  const fs = obj.geometry.faces.toJs();
+                  const vertices = new Float32Array(obj.geometry.verts.toJs());
+                  const normals = new Float32Array(obj.geometry.normals.toJs());
+                  const faces = obj.geometry.faces.toJs();
 
                   let offset = 0;
                   if (mapping[-1]) {
                     materials.unshift(
                       new THREE.MeshLambertMaterial({
-                        color: new THREE.Color(0.6, 0.6, 0.6),
+                        color: new THREE.Color(0.502, 0.502, 0.502),
                         side: THREE.DoubleSide,
                       })
                     );
                     offset = 1;
                   }
 
-                  materials.forEach((mat, mi) => {
-                    const idxList = mapping[mi - offset];
-                    if (!idxList) return;
+                  materials.forEach((material, materialIndex) => {
+                    const idxList = mapping[materialIndex - offset];
+                    if (!idxList || idxList.length === 0) return;
 
-                    const g = new THREE.BufferGeometry();
-                    const flatIdx = [];
+                    const geometry = new THREE.BufferGeometry();
+                    const indices = [];
                     idxList.forEach((i) => {
-                      flatIdx.push(fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]);
+                      indices.push(
+                        faces[3 * i],
+                        faces[3 * i + 1],
+                        faces[3 * i + 2]
+                      );
                     });
-                    g.setIndex(flatIdx);
-                    g.setAttribute(
+
+                    geometry.setIndex(indices);
+                    geometry.setAttribute(
                       "position",
-                      new THREE.BufferAttribute(vs, 3)
+                      new THREE.BufferAttribute(vertices, 3)
                     );
-                    g.setAttribute("normal", new THREE.BufferAttribute(ns, 3));
-                    geometries.push([g, mat]);
+                    geometry.setAttribute(
+                      "normal",
+                      new THREE.BufferAttribute(normals, 3)
+                    );
+                    geometry.computeBoundingSphere();
+
+                    geometries.push([geometry, material]);
                   });
 
                   lastMeshId = obj.geometry.id;
                 }
 
-                geometries.forEach(([g, mat]) => {
-                  const mesh = new THREE.Mesh(g, mat);
-                  const m = obj.transformation.matrix.data.toJs();
-                  const mat4 = new THREE.Matrix4()
+                geometries.forEach(([geometry, material]) => {
+                  const userData = {
+                    ifcId: obj.id,
+                    ifcType: obj.type,
+                    ifcGuid: obj.guid || null,
+                    elementType: elementType,
+                  };
+
+                  const meshGroup = viewer.addModelWithEdges(
+                    geometry,
+                    material,
+                    userData
+                  );
+
+                  const transformMatrix = obj.transformation.matrix.data.toJs();
+                  const matrix = new THREE.Matrix4()
                     .set(
-                      m[0],
-                      m[1],
-                      m[2],
+                      transformMatrix[0],
+                      transformMatrix[1],
+                      transformMatrix[2],
                       0,
-                      m[3],
-                      m[4],
-                      m[5],
+                      transformMatrix[3],
+                      transformMatrix[4],
+                      transformMatrix[5],
                       0,
-                      m[6],
-                      m[7],
-                      m[8],
+                      transformMatrix[6],
+                      transformMatrix[7],
+                      transformMatrix[8],
                       0,
-                      m[9],
-                      m[10],
-                      m[11],
+                      transformMatrix[9],
+                      transformMatrix[10],
+                      transformMatrix[11],
                       1
                     )
                     .transpose();
-                  mesh.matrixAutoUpdate = false;
-                  mesh.matrix = mat4;
 
-                  /* ★★★ 여기 수정 – scene 대신 MODEL_ROOT에 추가 ★★★ */
-                  MODEL_ROOT.add(mesh);
+                  meshGroup.matrixAutoUpdate = false;
+                  meshGroup.matrix.copy(matrix);
+
+                  viewer.addModel(meshGroup);
                 });
+
+                processedCount++;
+                if (processedCount % 50 === 0) {
+                  showLoadingStatus(`처리 중... ${processedCount}개 완료`);
+                }
               }
 
-              if (!it.next()) break;
+              if (!iterator.next()) break;
             }
+
+            showLoadingStatus(
+              `✅ 모델 로딩 완료! 총 ${processedCount}개 객체 처리`
+            );
+
+            // Z-up -> Y-up
+            viewer.modelGroup.rotation.x = -Math.PI / 2;
+
+            setTimeout(() => {
+              viewer.fitCameraToModel();
+              viewer.showLoading(false);
+            }, 100);
+          } else {
+            throw new Error("IFC iterator 초기화 실패");
           }
-
-          // 필요 시 모델이 누워있으면 아래 각도 조정 (90° 회전)
-          // MODEL_ROOT.rotation.x = Math.PI / 2;   // 눕혀 있으면 주석 해제해서 테스트
-          // MODEL_ROOT.rotation.y = Math.PI / 2;   // 방향이 다르면 이걸 시도
-
-          zoomToFit();
-          animate();
         } catch (error) {
-          console.error("3D 뷰어 로드 실패:", error);
-          const geometry = new THREE.BoxGeometry(2, 2, 2);
-          const material = new THREE.MeshLambertMaterial({ color: 0x888888 });
-          const cube = new THREE.Mesh(geometry, material);
-          MODEL_ROOT.add(cube);
+          console.error("❌ IFC 로딩 실패:", error);
+          showLoadingStatus("로딩 실패 - 기본 박스 표시");
 
-          camera.position.set(5, 5, 5);
-          camera.lookAt(0, 0, 0);
-          animate();
+          const geometry = new THREE.BoxGeometry(5, 5, 5);
+          const material = new THREE.MeshLambertMaterial({
+            color: new THREE.Color(0.502, 0.502, 0.502),
+            side: THREE.DoubleSide,
+          });
+          const userData = {
+            ifcId: "test",
+            ifcType: "TestBox",
+            elementType: "TestBox",
+          };
+
+          const testGroup = viewer.addModelWithEdges(
+            geometry,
+            material,
+            userData
+          );
+          viewer.addModel(testGroup);
+          viewer.fitCameraToModel();
+          viewer.showLoading(false);
+        } finally {
+          hideLegacySpinners();
         }
       })();
 
-      function zoomToFit() {
-        /* ★★★ MODEL_ROOT 기준으로 박스 계산 ★★★ */
-        const box = new THREE.Box3().setFromObject(MODEL_ROOT);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3()).length();
-        const dist = size * 1.5;
-        camera.position.copy(
-          center.clone().add(new THREE.Vector3(dist, dist, dist))
-        );
-        camera.lookAt(center);
-        controls.target.copy(center);
-        controls.update();
-      }
+      /* ===================== 콘솔 헬퍼 ===================== */
+      window.viewerControls = {
+        resetView: () => viewer.resetView(),
+        toggleAutoRotate: () => viewer.toggleAutoRotate(),
+        toggleWireframe: () => viewer.toggleWireframe(),
+        clearSelection: () => viewer.clearSelection(),
+        getSelectedObject: () => viewer.getSelectedObject(),
+        getStats: () => ({
+          objects: viewer.modelGroup.children.length,
+          triangles: viewer.modelGroup.children.reduce((sum, child) => {
+            return (
+              sum +
+              (child.children?.[0]?.geometry
+                ? child.children[0].geometry.index.count / 3
+                : 0)
+            );
+          }, 0),
+          selectedObject: viewer.selectedObject
+            ? viewer.selectedObject.userData
+            : null,
+        }),
+      };
 
-      function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        renderer.render(scene, camera);
-      }
-
-      window.addEventListener("resize", () => {
-        const w = viewDiv.clientWidth;
-        const h = viewDiv.clientHeight;
-        renderer.setSize(w, h);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-      });
+      console.log("🎮 뷰어 컨트롤:");
+      console.log("  viewerControls.resetView()");
+      console.log("  viewerControls.toggleAutoRotate()");
+      console.log("  viewerControls.toggleWireframe()");
+      console.log("  viewerControls.clearSelection()");
+      console.log("  viewerControls.getSelectedObject()");
+      console.log("  viewerControls.getStats()");
+      console.log("");
+      console.log("💡 조작법:");
+      console.log("  좌클릭: 객체 선택 / ESC: 선택 해제");
+      console.log("  마우스 휠: 포인터 기준 줌 (직접 구현)");
+      console.log("  드래그: 선택 객체 중심 회전 (카메라는 이동 안 함)");
     </script>
+
     <!-- Scripts -->
     <script src="{% static 'js/jquery.min.js'%}"></script>
     <script src="{% static 'js/jquery.dropotron.min.js'%}"></script>
