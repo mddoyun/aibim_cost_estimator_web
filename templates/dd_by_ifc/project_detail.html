@@ -395,7 +395,6 @@
         document.getElementById("resetDefaultSummaryFields").onclick =
           resetDefaultSummaryFields;
       }
-
       // ================================================================================================
       // 새로운 테이블 렌더링 - 공사코드별 그룹핑
       // ================================================================================================
@@ -929,6 +928,9 @@
             combinedItem[key] = codeInfo[key];
             summaryAllFields.add(key);
           });
+          // 산식 필드가 있으면 combinedItem에도 저장
+          combinedItem["산식"] = codeInfo["산식"] || "";
+          summaryAllFields.add("산식");
         }
 
         // 5) 계산된 필드들 (수량 * 단가 등)
@@ -941,65 +943,66 @@
       // 금액 계산 함수
       // ================================================================================================
       function calculateAmountFields(combinedItem, obj, costCode) {
-        // 기본 수량 (객체에서 가져오거나 1)
+        // 1) 기본 수량
         let quantity = parseFloat(
           combinedItem["수량"] || combinedItem.Quantity || 1
         );
+        if (isNaN(quantity)) quantity = 1;
+
+        // 2) 산식이 있으면 산식으로 수량 재계산
+        let formula = "";
+        if (costCode && codeData[costCode]) {
+          formula = (codeData[costCode]["산식"] || "").trim();
+        }
+        // 이미 createCombinedItem에서 combinedItem["산식"]를 넣었으므로 그 값 사용해도 됨
+        if (!formula && combinedItem["산식"]) {
+          formula = String(combinedItem["산식"]).trim();
+        }
+
+        if (formula) {
+          quantity = evalQuantityFromFormula(formula, combinedItem);
+        }
+
+        // 최종 수량 저장
+        combinedItem["수량"] = quantity;
+        summaryAllFields.add("수량");
+
+        // 3) 단가 정보
+        let materialUnitPrice = 0,
+          laborUnitPrice = 0,
+          expenseUnitPrice = 0,
+          totalUnitPrice = 0;
 
         if (costCode && codeData[costCode]) {
           const codeInfo = codeData[costCode];
-
-          // 단가들
-          const materialUnitPrice = parseFloat(codeInfo["재료비단가"] || 0);
-          const laborUnitPrice = parseFloat(codeInfo["노무비단가"] || 0);
-          const expenseUnitPrice = parseFloat(codeInfo["경비단가"] || 0);
-          const totalUnitPrice =
+          materialUnitPrice = parseFloat(codeInfo["재료비단가"] || 0);
+          laborUnitPrice = parseFloat(codeInfo["노무비단가"] || 0);
+          expenseUnitPrice = parseFloat(codeInfo["경비단가"] || 0);
+          totalUnitPrice =
             parseFloat(codeInfo["합계단가"] || 0) ||
             materialUnitPrice + laborUnitPrice + expenseUnitPrice;
-
-          // 금액들 계산
-          combinedItem["재료비단가"] = materialUnitPrice;
-          combinedItem["노무비단가"] = laborUnitPrice;
-          combinedItem["경비단가"] = expenseUnitPrice;
-          combinedItem["합계단가"] = totalUnitPrice;
-
-          combinedItem["재료비"] = quantity * materialUnitPrice;
-          combinedItem["노무비"] = quantity * laborUnitPrice;
-          combinedItem["경비"] = quantity * expenseUnitPrice;
-          combinedItem["총금액"] = quantity * totalUnitPrice;
-
-          // 필드 등록
-          [
-            "재료비단가",
-            "노무비단가",
-            "경비단가",
-            "합계단가",
-            "재료비",
-            "노무비",
-            "경비",
-            "총금액",
-          ].forEach((field) => {
-            summaryAllFields.add(field);
-          });
-        } else {
-          // 공사코드가 없는 경우 0으로 설정
-          [
-            "재료비단가",
-            "노무비단가",
-            "경비단가",
-            "합계단가",
-            "재료비",
-            "노무비",
-            "경비",
-            "총금액",
-          ].forEach((field) => {
-            combinedItem[field] = 0;
-            summaryAllFields.add(field);
-          });
         }
 
-        combinedItem["수량"] = quantity;
-        summaryAllFields.add("수량");
+        combinedItem["재료비단가"] = materialUnitPrice;
+        combinedItem["노무비단가"] = laborUnitPrice;
+        combinedItem["경비단가"] = expenseUnitPrice;
+        combinedItem["합계단가"] = totalUnitPrice;
+
+        combinedItem["재료비"] = quantity * materialUnitPrice;
+        combinedItem["노무비"] = quantity * laborUnitPrice;
+        combinedItem["경비"] = quantity * expenseUnitPrice;
+        combinedItem["총금액"] = quantity * totalUnitPrice;
+
+        [
+          "재료비단가",
+          "노무비단가",
+          "경비단가",
+          "합계단가",
+          "재료비",
+          "노무비",
+          "경비",
+          "총금액",
+        ].forEach((f) => summaryAllFields.add(f));
       }
 
       // ================================================================================================
@@ -2718,6 +2721,38 @@
           return num.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
         }
         return num.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
+      }
+      // === NEW: 산식 → 수량 계산 유틸 ===
+      function evalQuantityFromFormula(formula, itemObj) {
+        // formula가 없으면 기존 값(또는 1) 반환
+        if (!formula || !formula.trim()) {
+          const base = parseFloat(itemObj["수량"] || itemObj.Quantity || 1);
+          return isNaN(base) ? 1 : base;
+        }
+
+        // itemObj의 모든 숫자형 값을 소문자 key로 매핑
+        const valueMap = {};
+        const toNum = (v) => {
+          const n = parseFloat(v);
+          return isNaN(n) ? 0 : n;
+        };
+        Object.keys(itemObj).forEach((k) => {
+          valueMap[k.toLowerCase()] = toNum(itemObj[k]);
+        });
+
+        // 토큰(변수명)만 안전하게 숫자로 치환
+        const expr = formula.replace(/\b[a-zA-Z_][\w]*\b/g, (name) => {
+          const v = valueMap[name.toLowerCase()];
+          return v === undefined ? "0" : String(v);
+        });
+
+        try {
+          const result = Function('"use strict";return (' + expr + ");")();
+          return Number.isFinite(result) ? result : 0;
+        } catch (e) {
+          console.warn("수량 계산 오류:", formula, e);
+          return 0;
+        }
       }
 
       // IFC 저장 (다운로드) (수정된 API 경로)
