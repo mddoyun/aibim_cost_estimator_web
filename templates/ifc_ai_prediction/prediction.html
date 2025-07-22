@@ -362,6 +362,10 @@
       .hidden {
         display: none;
       }
+      /* 테이블 선택 표시 */
+      .objects-table tr.selected-row {
+        background: #ffe8a1 !important;
+      }
     </style>
   </head>
   <body data-project-id="{{ project.id }}">
@@ -538,6 +542,10 @@
       let loadedAIModel = null;
       let lastPredictionData = null;
       let currentMappingId = null;
+      // === 선택 동기화용 맵/상태 ===
+      const guidToRow = new Map();
+      let selectedRowEl = null;
+      let isSyncingFromViewer = false; // 루프 방지용
 
       // 페이지 로딩 시 초기화
       document.addEventListener("DOMContentLoaded", function () {
@@ -610,7 +618,9 @@
       function updateGroupedTable() {
         const tableHeaders = document.getElementById("tableHeaders");
         const tableBody = document.getElementById("tableBody");
-
+        // ★ 추가
+        guidToRow.clear();
+        selectedRowEl = null;
         // 헤더 업데이트 (주요 헤더들만 표시)
         const mainHeaders = [
           "GlobalId",
@@ -661,10 +671,21 @@
         }
       }
 
-      // 객체 행 생성
       function createObjectRow(obj, visibleHeaders) {
         const row = document.createElement("tr");
         row.className = "object-row";
+
+        // GlobalId 추출(대소문자/키 변형 대비)
+        const guid =
+          obj["GlobalId"] ||
+          obj["globalId"] ||
+          obj["IfcGuid"] ||
+          obj["ifcGuid"] ||
+          obj["GUID"] ||
+          obj["Guid"] ||
+          null;
+
+        row.dataset.guid = guid || "";
 
         visibleHeaders.forEach((header) => {
           const cell = document.createElement("td");
@@ -674,12 +695,42 @@
             value = value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
           }
 
-          cell.textContent = value || "";
-          cell.title = value || "";
+          cell.textContent = value ?? "";
+          cell.title = value ?? "";
           row.appendChild(cell);
         });
 
+        // ★ 테이블 행 클릭 → 3D 뷰어 선택
+        row.addEventListener("click", () => {
+          if (!guid) return;
+          handleTableRowClick(guid);
+        });
+
+        // ★ 맵 저장
+        if (guid) guidToRow.set(guid, row);
+
         return row;
+      }
+      function handleTableRowClick(guid) {
+        selectTableRowByGuid(guid); // 스크롤 없음
+        if (window.ifcViewer) {
+          isSyncingFromViewer = true;
+          try {
+            window.ifcViewer.selectByGuid(guid);
+          } finally {
+            setTimeout(() => (isSyncingFromViewer = false), 0);
+          }
+        }
+      }
+
+      function selectTableRowByGuid(guid) {
+        if (selectedRowEl) selectedRowEl.classList.remove("selected-row");
+        const row = guidToRow.get(guid);
+        if (row) {
+          row.classList.add("selected-row");
+          selectedRowEl = row;
+          // ★ 스크롤 금지: 아무 것도 하지 않음
+        }
       }
 
       // 객체들을 키로 그룹화
@@ -1715,23 +1766,40 @@
           );
         }
       }
-
       function createObjectRow(obj, visibleHeaders) {
         const row = document.createElement("tr");
         row.className = "object-row";
 
+        // 다양한 키 대비
+        const guid =
+          obj["GlobalId"] ||
+          obj["globalId"] ||
+          obj["IfcGuid"] ||
+          obj["ifcGuid"] ||
+          obj["GUID"] ||
+          obj["Guid"] ||
+          null;
+        row.dataset.guid = guid || "";
+
         visibleHeaders.forEach((header) => {
           const cell = document.createElement("td");
           let value = obj[header];
-
           if (typeof value === "number") {
             value = value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
           }
-
-          cell.textContent = value || "";
-          cell.title = value || "";
+          cell.textContent = value ?? "";
+          cell.title = value ?? "";
           row.appendChild(cell);
         });
+
+        // 클릭 → 뷰어 선택
+        row.addEventListener("click", () => {
+          if (!guid) return;
+          handleTableRowClick(guid);
+        });
+
+        // GUID ↔ Row 매핑
+        if (guid) guidToRow.set(guid, row);
 
         return row;
       }
@@ -2440,7 +2508,9 @@
           this.controls = null;
           this.modelGroup = null;
           this.isInitialized = false;
-
+          //
+          this.guidToObject = new Map(); // ★ 추가
+          this.onObjectSelected = null; // ★ 추가 (외부에 selection 전달 콜백)
           // 선택 관련
           this.raycaster = new THREE.Raycaster();
           this.mouse = new THREE.Vector2();
@@ -2771,6 +2841,28 @@
 
           this.originalMaterial = meshToHighlight.material;
           meshToHighlight.material = this.highlightMaterial;
+
+          // ★ 선택 통지 콜백 호출
+          const guid =
+            object?.userData?.ifcGuid ||
+            object?.userData?.GlobalId ||
+            object?.userData?.globalId;
+          if (guid && typeof this.onObjectSelected === "function") {
+            // 루프 방지 플래그
+            isSyncingFromViewer = true;
+            try {
+              this.onObjectSelected(guid);
+            } finally {
+              // 약간 지연 후 플래그 해제(중첩 호출 방지)
+              setTimeout(() => (isSyncingFromViewer = false), 0);
+            }
+          }
+        }
+        selectByGuid(guid) {
+          const obj = this.guidToObject.get(guid);
+          if (!obj) return false;
+          this.selectObject(obj);
+          return true;
         }
 
         clearSelection() {
@@ -2834,7 +2926,15 @@
         }
 
         addModel(object) {
-          if (this.modelGroup) this.modelGroup.add(object);
+          this.modelGroup.add(object);
+
+          // ★ IFC GUID 등록
+          const guid =
+            object?.userData?.ifcGuid ||
+            object?.userData?.GlobalId ||
+            object?.userData?.globalId ||
+            null;
+          if (guid) this.guidToObject.set(guid, object);
         }
 
         clearModels() {
@@ -2929,6 +3029,12 @@
       /* ===================== IFC 로딩 ===================== */
       const viewer = new IFCViewer3D("viewer");
       window.ifcViewer = viewer; // 전역 접근
+
+      // ★ 뷰어 → 테이블 동기화
+      viewer.onObjectSelected = (guid) => {
+        if (isSyncingFromViewer) return;
+        selectTableRowByGuid(guid); // 스크롤 없음
+      };
 
       const IFC_URL = "{{ ifc_abs_url }}";
       const WHEEL_URL =
