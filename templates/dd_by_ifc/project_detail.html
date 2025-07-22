@@ -166,8 +166,18 @@
             </div>
           </div>
           <div class="container_detail">
-            <div class="summary-total-label" id="summaryTotalLabel">
-              요약 총 금액: 0 원
+            <!-- ▼ 요약 총 금액 & 재계산 버튼 (PATCH) -->
+            <div class="container_detail">
+              <div class="summary-total-label" id="summaryTotalLabel">
+                요약 총 금액: 0 원
+              </div>
+              <button
+                class="btn-small"
+                id="recalculateAmountsBtn"
+                style="margin-left: 8px"
+              >
+                총액 재계산
+              </button>
             </div>
           </div>
         </div>
@@ -333,9 +343,136 @@
       let selectedObjectIds = [];
       let headers = [];
       let visibleHeaders = []; // 표시할 헤더들
+      // ====== ▼ 전역변수 추가 (기존 전역 변수 선언부 근처) ======
+      // 기존 전역부 근처
+      let activeFormulaField = "산식"; // 전체용 기본값(유지)
+      let formulaFields = []; // '산식*' 목록(기존)
+      const rowFormulaMap = new Map(); // ✨ key: item._uniqueKey , val: '산식1' 같은 선택값
 
       // 접었다/펼쳤다 및 공사코드 그룹핑 전역 변수 추가
       let expandedCostCodes = new Set(); // 펼쳐진 공사코드들
+
+      function buildRowFormulaSelect(item) {
+        const selVal = getItemFormulaField(item);
+        const opts = formulaFields
+          .map(
+            (f) =>
+              `<option value="${f}" ${
+                f === selVal ? "selected" : ""
+              }>${f}</option>`
+          )
+          .join("");
+        return `<select class="row-formula"
+                  data-uk="${item._uniqueKey}"
+                  style="font-size:10px;padding:1px 2px;">${opts}</select>`;
+      }
+
+      function recalcOneItem(item) {
+        const fName = getItemFormulaField(item); // 행마다 산식명
+        const formulaText = getFormulaText(item, fName); // 산식 문자열
+        const qty = formulaText
+          ? evalQuantityFromFormula(formulaText, item)
+          : parseFloat(item["수량"] || 0) || 0;
+        item["수량"] = qty;
+
+        const mU = parseFloat(item["재료비단가"] || 0);
+        const lU = parseFloat(item["노무비단가"] || 0);
+        const eU = parseFloat(item["경비단가"] || 0);
+        const tU =
+          parseFloat(item["합계단가"] || 0) ||
+          (isNaN(mU + lU + eU) ? 0 : mU + lU + eU);
+
+        item["재료비"] = qty * mU;
+        item["노무비"] = qty * lU;
+        item["경비"] = qty * eU;
+        item["총금액"] = qty * tU;
+      }
+
+      // 모든 항목 재계산(행 개별 선택값 적용)
+      function recalcAllItems() {
+        combinedItems.forEach(recalcOneItem);
+
+        // 총액 라벨 갱신
+        const total = combinedItems.reduce(
+          (s, it) => s + (parseFloat(it["총금액"]) || 0),
+          0
+        );
+        document.getElementById("summaryTotalLabel").textContent =
+          "요약 총 금액: " + total.toLocaleString("ko-KR") + " 원";
+
+        refreshSummaryTable(); // 다시 렌더 (선택값은 rowFormulaMap 때문에 유지됨)
+      }
+
+      function getItemFormulaField(item) {
+        // 행에 저장된 값이 있으면 그걸, 없으면 전체 기본값
+        return (
+          rowFormulaMap.get(item._uniqueKey) || activeFormulaField || "산식"
+        );
+      }
+
+      // 산식 텍스트 가져오기 헬퍼
+      function getFormulaText(item, fieldName) {
+        if (!fieldName) return "";
+        const code = item._costCode;
+        let txt = "";
+        if (code && codeData[code] && codeData[code][fieldName]) {
+          txt = codeData[code][fieldName];
+        }
+        if (!txt && item[fieldName]) txt = item[fieldName];
+        return txt || "";
+      }
+
+      // ====== ▼ 유틸: '산식'으로 시작하는 필드 수집 ======
+      function collectFormulaFields() {
+        // summaryAllFields 는 이미 Set → Array 로 있음
+        return Array.from(summaryAllFields).filter((f) => f.startsWith("산식"));
+      }
+
+      // ====== ▼ 선택된 산식으로 모든 항목의 수량/금액 재계산 ======
+      function recalcQuantitiesByFormula(_unused) {
+        recalcAllItems();
+      }
+
+      // ====== ▼ 헤더(맨 앞 열)에 콤보박스 심기 ======
+      function ensureFormulaSelectTh() {
+        const theadRow = document.querySelector("#summaryTable thead tr");
+        if (!theadRow) return;
+
+        let th = document.getElementById("formulaSelectTh");
+        if (!th) {
+          th = document.createElement("th");
+          th.id = "formulaSelectTh";
+          th.style.minWidth = "90px";
+          theadRow.insertBefore(th, theadRow.children[2] || null);
+        }
+
+        th.innerHTML = `
+    <select id="quantityFormulaSelect" style="font-size:11px;padding:2px 4px;width:100%;">
+    </select>
+  `;
+
+        const sel = document.getElementById("quantityFormulaSelect");
+        formulaFields = collectFormulaFields();
+
+        const hasSan = Array.isArray(summaryAllFields)
+          ? summaryAllFields.includes("산식")
+          : summaryAllFields.has("산식");
+        if (!formulaFields.includes("산식") && hasSan)
+          formulaFields.unshift("산식");
+
+        sel.innerHTML = formulaFields
+          .map((f) => `<option value="${f}">${f}</option>`)
+          .join("");
+
+        sel.value = activeFormulaField;
+
+        // 🔽🔽 여기! 기존 onchange 지우고 아래 코드로 교체 🔽🔽
+        sel.onchange = (e) => {
+          activeFormulaField = e.target.value;
+          rowFormulaMap.clear(); // 개별 선택값 초기화 안 하려면 주석 처리
+          recalcAllItems(); // 행별 산식 반영해서 전체 재계산
+        };
+      }
 
       // ================================================================================================
       // 필드 선택 UI 생성/업데이트 (위치 변경)
@@ -488,6 +625,12 @@
 
         // 그룹 선택 체크박스 (해당 코드의 모든 객체 선택용)
         const groupCheckTd = document.createElement("td");
+        // NEW: formula placeholder cell
+        const formulaTd = document.createElement("td");
+        formulaTd.className = "formula-col";
+        formulaTd.textContent = activeFormulaField; // 보여주고 싶으면, 아니면 ""
+        groupRow.appendChild(formulaTd);
+
         const groupCheckbox = document.createElement("input");
         groupCheckbox.type = "checkbox";
         groupCheckbox.className = "cost-code-group-checkbox";
@@ -567,6 +710,11 @@
 
         // 체크박스
         const checkTd = document.createElement("td");
+        const formulaTd = document.createElement("td");
+        formulaTd.className = "formula-col";
+        formulaTd.innerHTML = buildRowFormulaSelect(item);
+        tr.appendChild(formulaTd);
+
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.value = item._sourceGuid;
@@ -674,17 +822,22 @@
         const thead = document.querySelector("#summaryTable thead tr");
         if (!thead) return;
 
-        // 기존 헤더 (토글, 체크박스 제외) 제거
-        while (thead.children.length > 2) {
+        // 기존엔 2개(토글/체크박스)만 고정 → 이제 3개(토글/체크박스/산식셀) 고정
+        const FIXED_HEAD_CELLS = 3;
+
+        while (thead.children.length > FIXED_HEAD_CELLS) {
           thead.removeChild(thead.lastChild);
         }
 
-        // 선택한 필드들로 헤더 재구성 (첫 번째 필드 제외 - 토글용)
+        // 선택한 필드들로 헤더 재구성 (기존과 동일)
         summaryVisibleFields.slice(1).forEach((field) => {
           const th = document.createElement("th");
           th.textContent = field;
           thead.appendChild(th);
         });
+
+        // 콤보박스 보장 (맨 앞 열)
+        ensureFormulaSelectTh();
       }
 
       // ================================================================================================
@@ -1013,95 +1166,13 @@
 
         // 조합 항목들 생성
         generateCombinedItems();
-
-        // 총 금액 계산
-        const totalAmount = combinedItems.reduce((sum, item) => {
-          return sum + (parseFloat(item["총금액"]) || 0);
-        }, 0);
-
-        // 총 금액 표시 업데이트
-        document.getElementById("summaryTotalLabel").textContent =
-          "요약 총 금액: " + totalAmount.toLocaleString("ko-KR") + " 원";
-
-        // 필드 선택 UI 업데이트
-        renderSummaryFieldSelector();
-
-        // 테이블 렌더링
-        refreshSummaryTable();
-
+        formulaFields = collectFormulaFields();
+        ensureFormulaSelectTh(); // 콤보박스 생성/갱신
+        renderSummaryFieldSelector(); // ✅ 리스트 채우기
+        recalcQuantitiesByFormula(activeFormulaField);
         console.log(
           `✅ 공종별 내역서 로드 완료: ${combinedItems.length}개 항목`
         );
-      }
-
-      // ================================================================================================
-      // 필드 선택 UI 생성/업데이트
-      // ================================================================================================
-      function updateSummaryFieldSelector() {
-        // 기존 필드 선택기가 있는지 확인
-        let selectorContainer = document.getElementById("summaryFieldSelector");
-
-        if (!selectorContainer) {
-          // 필드 선택기 생성
-          selectorContainer = document.createElement("div");
-          selectorContainer.id = "summaryFieldSelector";
-          selectorContainer.className = "summary-field-selector";
-
-          selectorContainer.innerHTML = `
-            <div class="field-selector-header">
-              <h5>표시할 필드 선택</h5>
-              <div class="field-selector-buttons">
-                <button class="btn-small" id="selectAllSummaryFields">모두 선택</button>
-                <button class="btn-small" id="deselectAllSummaryFields">모두 해제</button>
-                <button class="btn-small" id="resetDefaultSummaryFields">기본값</button>
-              </div>
-            </div>
-            <div class="field-checkboxes-container">
-              <div class="field-checkboxes" id="summaryFieldCheckboxes"></div>
-            </div>
-          `;
-
-          // 요약표 바로 위에 삽입
-          const summaryContainer = document.getElementById("first_container");
-          summaryContainer.insertBefore(
-            selectorContainer,
-            summaryContainer.children[1]
-          );
-        }
-
-        // 체크박스들 생성
-        const checkboxContainer = document.getElementById(
-          "summaryFieldCheckboxes"
-        );
-        checkboxContainer.innerHTML = "";
-
-        summaryAllFields.forEach((field) => {
-          const div = document.createElement("div");
-          div.className = "field-checkbox";
-
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.id = `summaryField_${field}`;
-          checkbox.value = field;
-          checkbox.checked = summaryVisibleFields.includes(field);
-          checkbox.addEventListener("change", handleSummaryFieldToggle);
-
-          const label = document.createElement("label");
-          label.htmlFor = `summaryField_${field}`;
-          label.textContent = field;
-
-          div.appendChild(checkbox);
-          div.appendChild(label);
-          checkboxContainer.appendChild(div);
-        });
-
-        // 버튼 이벤트 설정
-        document.getElementById("selectAllSummaryFields").onclick = () =>
-          selectAllSummaryFields(true);
-        document.getElementById("deselectAllSummaryFields").onclick = () =>
-          selectAllSummaryFields(false);
-        document.getElementById("resetDefaultSummaryFields").onclick =
-          resetDefaultSummaryFields;
       }
 
       // ================================================================================================
@@ -1151,80 +1222,6 @@
 
         // 기본 방식: 단순 리스트
         renderBasicSummaryNew();
-      }
-
-      function renderBasicSummaryNew() {
-        const tbody = document.getElementById("summaryTableBody");
-        if (!tbody) return;
-
-        tbody.innerHTML = "";
-
-        // 헤더 업데이트
-        updateSummaryTableHeader();
-
-        combinedItems.forEach((item, index) => {
-          const tr = document.createElement("tr");
-          tr.className = "summary-item-row";
-          tr.dataset.uniqueKey = item._uniqueKey;
-          tr.dataset.guid = item._sourceGuid;
-          tr.dataset.costCode = item._costCode;
-
-          // 체크박스 열
-          const checkTd = document.createElement("td");
-          const checkbox = document.createElement("input");
-          checkbox.type = "checkbox";
-          checkbox.value = item._sourceGuid;
-          checkbox.className = "summary-item-checkbox";
-          checkTd.appendChild(checkbox);
-          tr.appendChild(checkTd);
-
-          // 선택한 필드들만 표시
-          summaryVisibleFields.forEach((field) => {
-            const td = document.createElement("td");
-            let value = item[field];
-
-            // 숫자 포맷팅
-            if (typeof value === "number") {
-              value = formatNumber(value);
-            }
-
-            td.textContent = value || "";
-            td.title = value || "";
-            tr.appendChild(td);
-          });
-
-          // 행 클릭 이벤트
-          tr.addEventListener("click", (e) => {
-            if (e.target.type === "checkbox") return;
-            handleSummaryItemClick(item, tr, e);
-          });
-
-          tbody.appendChild(tr);
-        });
-
-        console.log(
-          `✅ 기본 요약표 렌더링 완료: ${combinedItems.length}개 항목`
-        );
-      }
-
-      // ================================================================================================
-      // 테이블 헤더 업데이트
-      // ================================================================================================
-      function updateSummaryTableHeader() {
-        const thead = document.querySelector("#summaryTable thead tr");
-        if (!thead) return;
-
-        // 기존 헤더 (체크박스 제외) 제거
-        while (thead.children.length > 1) {
-          thead.removeChild(thead.lastChild);
-        }
-
-        // 선택한 필드들로 헤더 재구성
-        summaryVisibleFields.forEach((field) => {
-          const th = document.createElement("th");
-          th.textContent = field;
-          thead.appendChild(th);
-        });
       }
 
       // ================================================================================================
@@ -1327,6 +1324,9 @@
               checkbox.className = "summary-item-checkbox";
               checkTd.appendChild(checkbox);
               tr.appendChild(checkTd);
+              const formulaTd = document.createElement("td");
+              formulaTd.className = "formula-col";
+              tr.appendChild(formulaTd);
 
               // 데이터 셀들
               summaryVisibleFields.forEach((field) => {
@@ -1433,6 +1433,18 @@
         // 공사코드 그룹 체크박스는 이미 renderCostCodeGroup에서 처리됨
       }
 
+      document.addEventListener("change", function (e) {
+        if (!e.target.classList.contains("row-formula")) return;
+        const key = e.target.dataset.uk;
+        const field = e.target.value;
+        rowFormulaMap.set(key, field); // 선택 저장
+        const item = combinedItems.find((it) => it._uniqueKey === key);
+        if (item) {
+          recalcOneItem(item);
+          refreshSummaryTable(); // 간단히 전체 다시 그림 (토글/펼침 상태는 set 들로 유지)
+        }
+      });
+
       // 체크박스 상태 업데이트 (전체선택, 그룹선택 상태 동기화)
       function updateCheckboxStates() {
         const itemCheckboxes = document.querySelectorAll(
@@ -1478,51 +1490,40 @@
       }
 
       // 페이지 로딩 시 안내 메시지 추가
-      document.addEventListener("DOMContentLoaded", function () {
-        // 기존 초기화 함수들
-        loadDefaultCostCodes();
-        loadIFCObjects();
-        loadSummaryTable();
+      document.addEventListener("DOMContentLoaded", async function () {
+        await loadDefaultCostCodes(); // ✅ 반드시 기다림
+        await loadIFCObjects(); // 객체 로딩
+        loadSummaryTable(); // 요약표 생성
+        renderSummaryFieldSelector(); // 필드 선택 UI
         initSummaryGroupingUI();
         setupEventHandlers();
-
-        // 새로운 요약표 이벤트 핸들러 추가
         setupSummaryEventHandlers();
-
-        // 사용법 안내를 위한 툴팁 추가
-        const saveBtn = document.getElementById("saveIFCBtn");
-        if (saveBtn) {
-          saveBtn.title =
-            "공사코드가 반영된 새로운 IFC 파일을 생성하여 다운로드합니다. 시간이 걸릴 수 있습니다.";
-
-          // 버튼 텍스트도 더 명확하게 변경
-          saveBtn.textContent = "공사코드 반영 IFC 파일 다운로드";
-        }
       });
 
       // 기본 코드리스트 로드
-      function loadDefaultCostCodes() {
-        fetch("{% static 'references/CodeList.csv' %}")
-          .then((res) => {
-            if (!res.ok) {
-              console.log("기본 CodeList.csv 파일을 찾을 수 없습니다.");
-              return;
-            }
-            return res.text();
-          })
-          .then((text) => {
-            if (text) {
-              parseCostCodesFromCSV(text);
-              // 서버에 자동 업로드
-              uploadParsedCodesToServer();
-              console.log(
-                "기본 코드리스트 로드 완료:",
-                Object.keys(codeData).length + "건"
-              );
-            }
-          })
-          .catch((err) => console.error("기본 코드리스트 로드 실패:", err));
+      // 기본 코드리스트 로드 (캐시 무시 + 완료될 때까지 기다림)
+      async function loadDefaultCostCodes() {
+        try {
+          const url = `{% static 'references/CodeList.csv' %}?v=${Date.now()}`;
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) {
+            console.log("기본 CodeList.csv 파일을 찾을 수 없습니다.");
+            return;
+          }
+          const text = await res.text();
+          if (text) {
+            parseCostCodesFromCSV(text); // codeData 갱신
+            uploadParsedCodesToServer(); // 서버에도 업로드(기존 함수 그대로 사용)
+            console.log(
+              "기본 코드리스트 로드 완료:",
+              Object.keys(codeData).length + "건"
+            );
+          }
+        } catch (err) {
+          console.error("기본 코드리스트 로드 실패:", err);
+        }
       }
+
       function initSummaryGroupingUI() {
         const sels = [
           document.getElementById("summaryGroup1"),
@@ -2677,10 +2678,22 @@
       });
 
       // 코드 파일 업로드 처리 (API 경로 수정)
+      // 코드 CSV 업로드 (클라이언트 먼저 반영 → 서버 업로드)
       function handleCostCodeFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
 
+        // 1) 브라우저 메모리(codeData)에 먼저 반영
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          parseCostCodesFromCSV(e.target.result); // codeData 갱신
+          loadSummaryTable();
+          renderSummaryFieldSelector();
+          showNotification("CSV가 로컬에 반영되었습니다.", "success");
+        };
+        reader.readAsText(file, "utf-8");
+
+        // 2) 서버에도 업로드 (기존 API)
         const formData = new FormData();
         formData.append("csv_file", file);
 
@@ -2688,27 +2701,18 @@
           method: "POST",
           body: formData,
         })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(
-                `HTTP ${response.status}: ${response.statusText}`
-              );
-            }
-            return response.json();
-          })
+          .then((response) => response.json())
           .then((data) => {
             if (data.success) {
-              alert(data.message);
-              console.log(
-                `✅ 코드 파일 업로드 성공: ${data.total_codes}개 코드`
-              );
+              console.log(`✅ 서버 업로드 성공: ${data.total_codes}개 코드`);
+              showNotification("서버에도 CSV가 업로드되었습니다.", "info");
             } else {
               throw new Error(data.error || "알 수 없는 오류");
             }
           })
           .catch((error) => {
             console.error("❌ 코드 파일 업로드 실패:", error);
-            alert("파일 업로드 중 오류가 발생했습니다: " + error.message);
+            showNotification(`파일 업로드 실패: ${error.message}`, "error");
           });
       }
 
@@ -3492,6 +3496,71 @@
         }),
       };
       console.log("🎮 viewerControls.* 사용 가능");
+
+      /* =========================
+   PATCH: 버튼 바인딩/중복 제거
+   붙여넣기 위치: 견적/코드 UI 스크립트 끝부분
+========================= */
+      (() => {
+        /* 1) 총액 재계산 버튼 바인딩(이미 함수 recalculateAllAmounts 존재) */
+        const recalcBtn = document.getElementById("recalculateAmountsBtn");
+        if (recalcBtn && !recalcBtn.dataset.bound) {
+          recalcBtn.dataset.bound = "1";
+          recalcBtn.addEventListener("click", recalculateAllAmounts);
+        }
+
+        /* 2) saveIFCBtn 한 번만! (새 IFC 생성 & 다운로드) */
+        const saveBtn = document.getElementById("saveIFCBtn");
+        if (saveBtn && !saveBtn.dataset.bound) {
+          saveBtn.dataset.bound = "1";
+          saveBtn.onclick = async function () {
+            if (
+              !confirm(
+                "공사코드가 반영된 새로운 IFC 파일을 생성하여 다운로드하시겠습니까?\n(파일 생성에 시간이 걸릴 수 있습니다)"
+              )
+            ) {
+              return;
+            }
+
+            const originalText = saveBtn.textContent;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = `
+        <div class="spinner-border spinner-border-sm" role="status" style="width:14px;height:14px;"></div>
+        새 IFC 파일 생성 중...
+      `;
+
+            try {
+              const downloadUrl = `/dd_by_ifc/api/download_new_ifc/${PROJECT_ID}/`;
+              const resp = await fetch(downloadUrl);
+              if (!resp.ok) {
+                let err;
+                try {
+                  const j = await resp.json();
+                  err = j.error;
+                } catch (_) {}
+                throw new Error(err || `HTTP ${resp.status}`);
+              }
+
+              const blob = await resp.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${PROJECT_ID}_with_costcodes.ifc`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(url);
+              alert("✅ 공사코드 반영 IFC 파일 다운로드 완료!");
+            } catch (e) {
+              console.error(e);
+              alert(`❌ IFC 파일 생성/다운로드 실패: ${e.message}`);
+            } finally {
+              saveBtn.disabled = false;
+              saveBtn.textContent = originalText;
+            }
+          };
+        }
+      })();
     </script>
 
     <!-- ─────────────────────────────  페이지 전용 스타일  ───────────────────────────── -->

@@ -1,5 +1,5 @@
 ﻿공종,코드,명칭,규격,단위,산식,재료비단가,노무비단가,경비단가,합계단가,RecCost1,RecCost2,산식2,산식3
-토목공사,CAA110111110,교통처리용우회도로,,식,GrossSideArea*2,100,200,300,1000,2000,3,Volume,Volume*2
-토목공사,CAA12001N000,공사용진입도로,,식,GrossSideArea*GrossSideArea,100,200,300,1000,2000,3,Volume,Volume*2
-토목공사,CAA12001N001,세번째,,식,Depth,100,200,300,1000,2000,3,Volume,Volume*2
-토목공사,CAA12001N001,세번째,,식,1000,100,200,300,1000,2000,3,Volume,Volume*2
+토목공사,CAA110111110,교통처리용우회도로,,식,GrossSideArea*2,100,200,300,1000,2000,3,GrossSideArea,GrossSideArea*2
+토목공사,CAA12001N000,공사용진입도로,,식,GrossSideArea*GrossSideArea,100,200,300,1000,2000,3,GrossSideArea,GrossSideArea*2
+토목공사,CAA12001N001,세번째,,식,Depth,100,200,300,1000,2000,3,GrossSideArea,GrossSideArea*2
+토목공사,CAA12001N001,세번째,,식,1000,100,200,300,1000,2000,3,GrossSideArea,GrossSideArea*2
