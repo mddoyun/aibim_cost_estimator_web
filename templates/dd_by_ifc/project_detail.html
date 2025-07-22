@@ -96,11 +96,13 @@
     <div class="view-container"><div id="viewer"></div></div>
 
     <!-- ─────────────────────────────  전체 코드 요약 테이블  ───────────────────────────── -->
-    <div class="container" id="first_container">
-      <div id="result_container">
+    <div class="container_detail_first" id="first_container">
+      <div class="container_detail">
         <div style="font-weight: bold">공종별 내역서</div>
-        <div style="overflow-x: auto">
-          <table id="summaryTable" class="table table-bordered summary-table">
+      </div>
+      <div class="container_detail">
+        <div class="table-wrapper" style="overflow-x: auto">
+          <table id="summaryTable" class="table table-bordered aibim-table">
             <thead>
               <tr>
                 <th>공사코드</th>
@@ -122,6 +124,8 @@
             <tbody id="summaryTableBody"></tbody>
           </table>
         </div>
+      </div>
+      <div class="container_detail">
         <div class="summary-total-label" id="summaryTotalLabel">
           요약 총 금액: 0 원
         </div>
@@ -145,7 +149,6 @@
           <button class="btn" id="addCodeBtn">공사코드 추가</button>
           <button class="btn" id="removeCodeBtn">공사코드 삭제</button>
           <button class="btn" id="loadCodeBtn">코드리스트 열기</button>
-
           <!-- 컬럼 선택 영역 -->
           <div class="column-selector">
             <h4>표시할 필드 선택</h4>
@@ -160,7 +163,6 @@
             </div>
           </div>
         </div>
-
         <!-- 우측 패널 -->
         <div class="right-panel">
           <div class="group-bar">
@@ -193,22 +195,36 @@
 
       <!-- 상세 코드별 수량/금액 -->
       <div class="container_detail">
-        <table class="code-detail-table" id="codeDetailTable">
-          <thead>
-            <tr>
-              <th>공사코드</th>
-              <th>명칭</th>
-              <th>규격</th>
-              <th>단위</th>
-              <th>산식</th>
-              <th>수량</th>
-              <th>단가</th>
-              <th>금액</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <div class="total-label" id="totalLabel">총 금액: 0 원</div>
+        <div class="total-label" id="totalLabel">선택객체별 총금액: 0 원</div>
+      </div>
+      <div class="container_detail">
+        <div class="table-wrapper" style="overflow-x: auto">
+          <table class="table table-bordered aibim-table" id="codeDetailTable">
+            <thead>
+              <tr>
+                <!-- 필수 6개 -->
+                <th>공사코드</th>
+                <th>명칭</th>
+                <th>규격</th>
+                <th>단위</th>
+                <th>산식</th>
+                <th>수량</th>
+
+                <!-- 선택: 단가·금액 컬럼 (원하면 유지/추가) -->
+                <th>재료비단가</th>
+                <th>재료비</th>
+                <th>노무비단가</th>
+                <th>노무비</th>
+                <th>경비단가</th>
+                <th>경비</th>
+                <th>합계단가</th>
+                <th>금액</th>
+              </tr>
+            </thead>
+
+            <tbody></tbody>
+          </table>
+        </div>
         <div style="height: 12px"></div>
       </div>
 
@@ -760,7 +776,7 @@
 
         // 테이블 생성
         const table = document.createElement("table");
-        table.className = "ifc-objects-table";
+        table.className = "table table-bordered aibim-table";
 
         // 헤더
         const thead = document.createElement("thead");
@@ -1086,20 +1102,26 @@
         const tbody = document.querySelector("#codeDetailTable tbody");
         tbody.innerHTML = "";
 
-        details.forEach((detail) => {
+        details.forEach((d) => {
           const row = document.createElement("tr");
           row.innerHTML = `
-            <td>${detail.code}</td>
-            <td>${detail.name}</td>
-            <td>${detail.specification}</td>
-            <td>${detail.unit}</td>
-            <td>${detail.formula}</td>
-            <td>${detail.quantity.toLocaleString("ko-KR", {
-              maximumFractionDigits: 2,
-            })}</td>
-            <td>${detail.unit_price.toLocaleString("ko-KR")}</td>
-            <td>${detail.amount.toLocaleString("ko-KR")}</td>
-          `;
+      <td>${d.code}</td>
+      <td>${d.name}</td>
+      <td>${d.specification}</td>
+      <td>${d.unit}</td>
+      <td>${d.formula}</td>
+      <td>${formatNumber(d.quantity)}</td>
+
+      <!-- 단가·금액은 필요 시 포함 -->
+      <td>${formatNumber(d.material_unit_price)}</td>
+      <td>${formatNumber(d.material_amount)}</td>
+      <td>${formatNumber(d.labor_unit_price)}</td>
+      <td>${formatNumber(d.labor_amount)}</td>
+      <td>${formatNumber(d.expense_unit_price)}</td>
+      <td>${formatNumber(d.expense_amount)}</td>
+      <td>${formatNumber(d.total_unit_price)}</td>
+      <td>${formatNumber(d.total_amount)}</td>
+    `;
           tbody.appendChild(row);
         });
       }
@@ -1601,45 +1623,6 @@
     </script>
     <!-- ─────────────────────────────  페이지 전용 스타일 (테이블 축소 등)  ───────────────────────────── -->
     <style>
-      .ifc-objects-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 10px 0;
-        font-size: 11px;
-      }
-      .ifc-objects-table th,
-      .ifc-objects-table td {
-        border: 1px solid #ddd;
-        padding: 3px 6px;
-        text-align: left;
-        height: 24px;
-        vertical-align: middle;
-        line-height: 1.2;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .ifc-objects-table th {
-        background-color: #f2f2f2;
-        font-weight: bold;
-        height: 28px;
-        font-size: 10px;
-      }
-      .ifc-objects-table tbody tr {
-        height: 24px;
-      }
-      .ifc-objects-table tr:nth-child(even) {
-        background-color: #f9f9f9;
-      }
-      .ifc-objects-table tbody tr:hover {
-        background-color: #e8f4fd;
-        cursor: pointer;
-      }
-      .ifc-objects-table tbody tr.selected {
-        background-color: #007bff !important;
-        color: white;
-      }
-
       .group-header {
         background-color: #e0e0e0 !important;
         font-weight: bold;
@@ -1678,58 +1661,9 @@
         color: white;
       }
 
-      .code-detail-table {
-        font-size: 11px;
-      }
-      .code-detail-table th,
-      .code-detail-table td {
-        padding: 3px 6px;
-        font-size: 11px;
-      }
-      .code-detail-table tbody tr.selected {
-        background-color: #007bff;
-        color: white;
-      }
+      /* 테이블 */
 
-      .summary-table {
-        width: max-content !important; /* 컬럼 길이만큼 확장 */
-        min-width: 1200px;
-        border-collapse: collapse;
-        font-size: 11px; /* 글씨 작게 */
-        white-space: nowrap; /* 줄바꿈 금지 */
-        background: white;
-      }
-      .summary-table th,
-      .summary-table td {
-        padding: 3px 8px;
-        border: 1px solid #ddd;
-        font-size: 11px; /* 글씨 작게 */
-        white-space: nowrap; /* 줄바꿈 금지 */
-        height: 24px;
-        vertical-align: middle;
-        text-align: left;
-      }
-      .summary-table th {
-        background-color: #f2f2f2;
-        font-weight: bold;
-        font-size: 10px;
-      }
-      .summary-table tr:nth-child(even) {
-        background-color: #f9f9f9;
-      }
-      .summary-table tr.group-header {
-        background-color: #e0e0e0 !important;
-        font-weight: bold;
-        font-size: 11px;
-      }
-      .summary-table tbody tr:hover {
-        background-color: #e8f4fd;
-        cursor: pointer;
-      }
-      .summary-table tbody tr.selected {
-        background-color: #007bff !important;
-        color: white;
-      }
+      /* 셀 */
 
       .column-selector {
         margin-top: 15px;
@@ -1838,6 +1772,54 @@
       }
       .btn-block:hover {
         background-color: #218838;
+      }
+      /* ─── 공통 래퍼 ───────────────────────────────────── */
+      /* ─── flex 안에서도 100%로 펴지게 ─────────────── */
+      .table-wrapper {
+        flex: 1 1 100%; /* 남는 폭 모두 차지 */
+        width: 100%; /* 부모 div 꽉 차기 */
+        overflow-x: auto; /* 넘치면 가로 스크롤 */
+      }
+
+      /* ─── AIBIM 통합 테이블 ───────────────────────── */
+      .aibim-table {
+        width: 100%; /* 기본적으로 꽉 차고               */
+        min-width: 1200px; /* 칼럼이 많을 땐 이 기준으로 넘침 */
+        border-collapse: collapse;
+        font-size: 11px;
+        background: #fff;
+      }
+      .aibim-table th,
+      .aibim-table td {
+        padding: 4px 6px;
+        border: 1px solid #ddd;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        height: 24px;
+        vertical-align: middle;
+        text-align: left;
+      }
+      .aibim-table th {
+        background: #f2f2f2;
+        font-weight: bold;
+        font-size: 10px;
+      }
+      .aibim-table tbody tr:nth-child(even) {
+        background: #f9f9f9;
+      }
+      .aibim-table tbody tr:hover {
+        background: #e8f4fd;
+        cursor: pointer;
+      }
+      .aibim-table tbody tr.selected {
+        background: #007bff !important;
+        color: #fff;
+      }
+      .aibim-table .group-header {
+        background: #e0e0e0 !important;
+        font-weight: bold;
+        cursor: pointer;
       }
     </style>
   </body>

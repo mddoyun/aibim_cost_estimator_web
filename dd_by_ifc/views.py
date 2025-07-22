@@ -773,84 +773,74 @@ def download_ifc_file(request, project_id):
 @require_http_methods(["POST"])
 def get_object_details(request):
     object_ids = request.POST.getlist('object_ids[]')
-    project_id = request.POST.get('project_id')  # 추가
+    project_id = request.POST.get('project_id')
 
     if not object_ids or not project_id:
         return JsonResponse({'details': [], 'total_amount': 0})
 
-    # **프로젝트 기준으로 필터링!**
-    objects = IFCObject.objects.filter(
-        project_id=project_id,
-        global_id__in=object_ids
+    objects = (
+        IFCObject.objects
+        .filter(project_id=project_id, global_id__in=object_ids)
     )
-    
-    # 코드별 수량 합계 계산
-    combined_codes = defaultdict(lambda: {
-        'name': '',
-        'specification': '',
-        'unit': '',
-        'formula': '',
-        'unit_price': 0,
-        'quantity': 0
+
+    combined = defaultdict(lambda: {
+        # 표시용 기본 필드
+        'name': '', 'specification': '', 'unit': '', 'formula': '',
+        # 수량·단가·금액
+        'quantity': 0,
+        'material_unit_price': 0, 'material_amount': 0,
+        'labor_unit_price': 0,    'labor_amount': 0,
+        'expense_unit_price': 0,  'expense_amount': 0,
+        'total_unit_price': 0,    'total_amount': 0,
     })
-    
-    total_amount = 0
-    
+
+    total_amount_sum = 0
+
     for obj in objects:
-        codes = obj.get_cost_codes()
-        
-        # 수량 계산 컨텍스트 준비
-        quantity_context = {**obj.quantities, **obj.properties}
-        quantity_context.update({
-            'GlobalId': obj.global_id,
-            'Name': obj.name,
-            'IfcClass': obj.ifc_class,
-            'SpatialContainer': obj.spatial_container,
-        })
-        
-        for code in codes:
+        ctx = {**obj.quantities, **obj.properties,
+               'GlobalId': obj.global_id,
+               'Name': obj.name,
+               'IfcClass': obj.ifc_class,
+               'SpatialContainer': obj.spatial_container}
+
+        for code in obj.get_cost_codes():
             try:
-                cost_code = CostCode.objects.get(code=code)
-                
-                if code not in combined_codes:
-                    combined_codes[code].update({
-                        'name': cost_code.name,
-                        'specification': cost_code.specification,
-                        'unit': cost_code.unit,
-                        'formula': cost_code.formula,
-                        'unit_price': float(cost_code.total_cost)
+                cc = CostCode.objects.get(code=code)
+
+                q = eval(cc.formula, {"__builtins__": None}, ctx) if cc.formula else 0
+
+                bucket = combined[code]
+                # 한 번만 설정되는 값
+                if not bucket['name']:
+                    bucket.update({
+                        'name': cc.name,
+                        'specification': cc.specification,
+                        'unit': cc.unit,
+                        'formula': cc.formula,
+                        'material_unit_price': float(cc.material_cost),
+                        'labor_unit_price':    float(cc.labor_cost),
+                        'expense_unit_price':  float(cc.expense_cost),
+                        'total_unit_price':    float(cc.total_cost),
                     })
-                
-                # 수량 계산
-                try:
-                    quantity = eval(cost_code.formula, {"__builtins__": None}, quantity_context)
-                except:
-                    quantity = 0
-                
-                combined_codes[code]['quantity'] += quantity
-                total_amount += quantity * float(cost_code.total_cost)
-                
+
+                bucket['quantity']            += q
+                bucket['material_amount']     += q * float(cc.material_cost)
+                bucket['labor_amount']        += q * float(cc.labor_cost)
+                bucket['expense_amount']      += q * float(cc.expense_cost)
+                bucket['total_amount']        += q * float(cc.total_cost)
+                total_amount_sum              += q * float(cc.total_cost)
+
             except CostCode.DoesNotExist:
                 continue
-    
-    # 결과 정리
-    details = []
-    for code, data in combined_codes.items():
-        details.append({
-            'code': code,
-            'name': data['name'],
-            'specification': data['specification'],
-            'unit': data['unit'],
-            'formula': data['formula'],
-            'quantity': data['quantity'],
-            'unit_price': data['unit_price'],
-            'amount': data['quantity'] * data['unit_price']
-        })
-    
-    return JsonResponse({
-        'details': details,
-        'total_amount': total_amount
-    })
+            except Exception:
+                continue
+
+    details = [{
+        'code': code, **data
+    } for code, data in combined.items()]
+
+    return JsonResponse({'details': details,
+                         'total_amount': total_amount_sum})
 
 @csrf_exempt
 @require_http_methods(["GET"])
