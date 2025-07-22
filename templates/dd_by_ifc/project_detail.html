@@ -128,8 +128,7 @@
           <table id="summaryTable" class="table table-bordered aibim-table">
             <thead>
               <tr>
-                <th style="width: 24px"></th>
-                <!-- ← 추가: 펼치기 버튼용 -->
+                <th><input type="checkbox" id="summarySelectAllCheckbox" /></th>
                 <th>공사코드</th>
                 <th>공종</th>
                 <th>명칭</th>
@@ -307,6 +306,32 @@
       let headers = [];
       let visibleHeaders = []; // 표시할 헤더들
 
+      // ================================================================================================
+      // 새로운 공종별 내역서 전용 전역 변수들
+      // ================================================================================================
+      let combinedItems = []; // 객체-공사코드 조합 배열
+      let summaryVisibleFields = []; // 요약표에서 보여줄 필드들
+      let summaryAllFields = []; // 요약표에서 사용 가능한 모든 필드들
+
+      // 기본 표시할 필드들 정의
+      const DEFAULT_SUMMARY_FIELDS = [
+        "GlobalId",
+        "Name",
+        "IfcClass",
+        "SpatialContainer",
+        "CostCode", // 공사코드
+        "공종", // 공사코드 속성
+        "명칭", // 공사코드 속성
+        "규격", // 공사코드 속성
+        "단위", // 공사코드 속성
+        "수량",
+        "재료비단가",
+        "노무비단가",
+        "경비단가",
+        "합계단가",
+        "총금액",
+      ];
+
       // ==== Viewer <-> Table Sync State ====
       const guidToRow = new Map(); // guid -> <tr>
       let isSyncingFromViewer = false;
@@ -394,6 +419,612 @@
       window.guidToRow = guidToRow;
       window.handleTableRowClick = handleTableRowClick;
 
+      // ================================================================================================
+      // 새로운 공종별 내역서 - 객체-공사코드 조합 생성 함수
+      // ================================================================================================
+      function generateCombinedItems() {
+        combinedItems = [];
+        summaryAllFields = new Set();
+
+        if (!Array.isArray(objectData) || Object.keys(codeData).length === 0) {
+          console.log("⚠️ 객체 데이터 또는 공사코드 데이터가 없습니다.");
+          return;
+        }
+
+        objectData.forEach((obj) => {
+          // CostItems 속성에서 공사코드들 추출
+          let costItemsStr =
+            obj.CostItems || (obj.Properties && obj.Properties.CostItems) || "";
+
+          if (!costItemsStr) {
+            // 공사코드가 없는 경우도 하나의 항목으로 생성 (공사코드는 빈값)
+            const combinedItem = createCombinedItem(obj, null);
+            combinedItems.push(combinedItem);
+            return;
+          }
+
+          // '+' 구분자로 여러 공사코드 분할
+          const codes = costItemsStr
+            .split("+")
+            .map((code) => code.trim())
+            .filter((code) => code.length > 0);
+
+          if (codes.length === 0) {
+            const combinedItem = createCombinedItem(obj, null);
+            combinedItems.push(combinedItem);
+          } else {
+            // 각 공사코드별로 별도 항목 생성
+            codes.forEach((code) => {
+              const combinedItem = createCombinedItem(obj, code);
+              combinedItems.push(combinedItem);
+            });
+          }
+        });
+
+        // 사용 가능한 모든 필드 정리
+        summaryAllFields = Array.from(summaryAllFields).sort();
+
+        // 기본 표시 필드 설정 (처음 생성시에만)
+        if (summaryVisibleFields.length === 0) {
+          summaryVisibleFields = DEFAULT_SUMMARY_FIELDS.filter((field) =>
+            summaryAllFields.includes(field)
+          );
+        }
+
+        console.log(`✅ 조합 항목 생성 완료: ${combinedItems.length}개`);
+        console.log(`📊 사용 가능한 필드: ${summaryAllFields.length}개`);
+      }
+
+      // ================================================================================================
+      // 개별 조합 항목 생성 함수
+      // ================================================================================================
+      function createCombinedItem(obj, costCode) {
+        const combinedItem = {};
+
+        // 고유 키 생성 (GlobalId + 공사코드)
+        const globalId =
+          obj.GlobalId || obj.globalId || obj.GUID || obj.Guid || "";
+        combinedItem._uniqueKey = globalId + "|" + (costCode || "NO_CODE");
+        combinedItem._sourceGuid = globalId;
+        combinedItem._costCode = costCode || "";
+
+        // 1) IFC 객체의 직접 속성들 복사
+        Object.keys(obj).forEach((key) => {
+          if (key !== "Properties" && key !== "Quantities") {
+            combinedItem[key] = obj[key];
+            summaryAllFields.add(key);
+          }
+        });
+
+        // 2) Properties 속성들 복사
+        if (obj.Properties && typeof obj.Properties === "object") {
+          Object.keys(obj.Properties).forEach((key) => {
+            const propKey = `Props_${key}`;
+            combinedItem[propKey] = obj.Properties[key];
+            combinedItem[key] = obj.Properties[key]; // 단순 이름으로도 접근 가능
+            summaryAllFields.add(key);
+            summaryAllFields.add(propKey);
+          });
+        }
+
+        // 3) Quantities 속성들 복사
+        if (obj.Quantities && typeof obj.Quantities === "object") {
+          Object.keys(obj.Quantities).forEach((key) => {
+            const qtyKey = `Qty_${key}`;
+            combinedItem[qtyKey] = obj.Quantities[key];
+            combinedItem[key] = obj.Quantities[key]; // 단순 이름으로도 접근 가능
+            summaryAllFields.add(key);
+            summaryAllFields.add(qtyKey);
+          });
+        }
+
+        // 4) 공사코드 정보 추가
+        combinedItem.CostCode = costCode || "";
+        summaryAllFields.add("CostCode");
+
+        if (costCode && codeData[costCode]) {
+          const codeInfo = codeData[costCode];
+          Object.keys(codeInfo).forEach((key) => {
+            combinedItem[key] = codeInfo[key];
+            summaryAllFields.add(key);
+          });
+        }
+
+        // 5) 계산된 필드들 (수량 * 단가 등)
+        calculateAmountFields(combinedItem, obj, costCode);
+
+        return combinedItem;
+      }
+
+      // ================================================================================================
+      // 금액 계산 함수
+      // ================================================================================================
+      function calculateAmountFields(combinedItem, obj, costCode) {
+        // 기본 수량 (객체에서 가져오거나 1)
+        let quantity = parseFloat(
+          combinedItem["수량"] || combinedItem.Quantity || 1
+        );
+
+        if (costCode && codeData[costCode]) {
+          const codeInfo = codeData[costCode];
+
+          // 단가들
+          const materialUnitPrice = parseFloat(codeInfo["재료비단가"] || 0);
+          const laborUnitPrice = parseFloat(codeInfo["노무비단가"] || 0);
+          const expenseUnitPrice = parseFloat(codeInfo["경비단가"] || 0);
+          const totalUnitPrice =
+            parseFloat(codeInfo["합계단가"] || 0) ||
+            materialUnitPrice + laborUnitPrice + expenseUnitPrice;
+
+          // 금액들 계산
+          combinedItem["재료비단가"] = materialUnitPrice;
+          combinedItem["노무비단가"] = laborUnitPrice;
+          combinedItem["경비단가"] = expenseUnitPrice;
+          combinedItem["합계단가"] = totalUnitPrice;
+
+          combinedItem["재료비"] = quantity * materialUnitPrice;
+          combinedItem["노무비"] = quantity * laborUnitPrice;
+          combinedItem["경비"] = quantity * expenseUnitPrice;
+          combinedItem["총금액"] = quantity * totalUnitPrice;
+
+          // 필드 등록
+          [
+            "재료비단가",
+            "노무비단가",
+            "경비단가",
+            "합계단가",
+            "재료비",
+            "노무비",
+            "경비",
+            "총금액",
+          ].forEach((field) => {
+            summaryAllFields.add(field);
+          });
+        } else {
+          // 공사코드가 없는 경우 0으로 설정
+          [
+            "재료비단가",
+            "노무비단가",
+            "경비단가",
+            "합계단가",
+            "재료비",
+            "노무비",
+            "경비",
+            "총금액",
+          ].forEach((field) => {
+            combinedItem[field] = 0;
+            summaryAllFields.add(field);
+          });
+        }
+
+        combinedItem["수량"] = quantity;
+        summaryAllFields.add("수량");
+      }
+
+      // ================================================================================================
+      // 새로운 요약 테이블 로드 함수 (기존 loadSummaryTable 대체)
+      // ================================================================================================
+      function loadSummaryTable() {
+        console.log("🔄 새로운 방식으로 공종별 내역서 생성 중...");
+
+        // 조합 항목들 생성
+        generateCombinedItems();
+
+        // 총 금액 계산
+        const totalAmount = combinedItems.reduce((sum, item) => {
+          return sum + (parseFloat(item["총금액"]) || 0);
+        }, 0);
+
+        // 총 금액 표시 업데이트
+        document.getElementById("summaryTotalLabel").textContent =
+          "요약 총 금액: " + totalAmount.toLocaleString("ko-KR") + " 원";
+
+        // 필드 선택 UI 업데이트
+        updateSummaryFieldSelector();
+
+        // 테이블 렌더링
+        refreshSummaryTable();
+
+        console.log(
+          `✅ 공종별 내역서 로드 완료: ${combinedItems.length}개 항목`
+        );
+      }
+
+      // ================================================================================================
+      // 필드 선택 UI 생성/업데이트
+      // ================================================================================================
+      function updateSummaryFieldSelector() {
+        // 기존 필드 선택기가 있는지 확인
+        let selectorContainer = document.getElementById("summaryFieldSelector");
+
+        if (!selectorContainer) {
+          // 필드 선택기 생성
+          selectorContainer = document.createElement("div");
+          selectorContainer.id = "summaryFieldSelector";
+          selectorContainer.className = "summary-field-selector";
+
+          selectorContainer.innerHTML = `
+            <div class="field-selector-header">
+              <h5>표시할 필드 선택</h5>
+              <div class="field-selector-buttons">
+                <button class="btn-small" id="selectAllSummaryFields">모두 선택</button>
+                <button class="btn-small" id="deselectAllSummaryFields">모두 해제</button>
+                <button class="btn-small" id="resetDefaultSummaryFields">기본값</button>
+              </div>
+            </div>
+            <div class="field-checkboxes-container">
+              <div class="field-checkboxes" id="summaryFieldCheckboxes"></div>
+            </div>
+          `;
+
+          // 요약표 바로 위에 삽입
+          const summaryContainer = document.getElementById("first_container");
+          summaryContainer.insertBefore(
+            selectorContainer,
+            summaryContainer.children[1]
+          );
+        }
+
+        // 체크박스들 생성
+        const checkboxContainer = document.getElementById(
+          "summaryFieldCheckboxes"
+        );
+        checkboxContainer.innerHTML = "";
+
+        summaryAllFields.forEach((field) => {
+          const div = document.createElement("div");
+          div.className = "field-checkbox";
+
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.id = `summaryField_${field}`;
+          checkbox.value = field;
+          checkbox.checked = summaryVisibleFields.includes(field);
+          checkbox.addEventListener("change", handleSummaryFieldToggle);
+
+          const label = document.createElement("label");
+          label.htmlFor = `summaryField_${field}`;
+          label.textContent = field;
+
+          div.appendChild(checkbox);
+          div.appendChild(label);
+          checkboxContainer.appendChild(div);
+        });
+
+        // 버튼 이벤트 설정
+        document.getElementById("selectAllSummaryFields").onclick = () =>
+          selectAllSummaryFields(true);
+        document.getElementById("deselectAllSummaryFields").onclick = () =>
+          selectAllSummaryFields(false);
+        document.getElementById("resetDefaultSummaryFields").onclick =
+          resetDefaultSummaryFields;
+      }
+
+      // ================================================================================================
+      // 필드 선택 이벤트 핸들러들
+      // ================================================================================================
+      function handleSummaryFieldToggle() {
+        const checkedBoxes = document.querySelectorAll(
+          "#summaryFieldCheckboxes input:checked"
+        );
+        summaryVisibleFields = Array.from(checkedBoxes).map((cb) => cb.value);
+        refreshSummaryTable();
+      }
+
+      function selectAllSummaryFields(select) {
+        const checkboxes = document.querySelectorAll(
+          "#summaryFieldCheckboxes input"
+        );
+        checkboxes.forEach((cb) => (cb.checked = select));
+        handleSummaryFieldToggle();
+      }
+
+      function resetDefaultSummaryFields() {
+        summaryVisibleFields = DEFAULT_SUMMARY_FIELDS.filter((field) =>
+          summaryAllFields.includes(field)
+        );
+
+        // 체크박스 상태 업데이트
+        const checkboxes = document.querySelectorAll(
+          "#summaryFieldCheckboxes input"
+        );
+        checkboxes.forEach((cb) => {
+          cb.checked = summaryVisibleFields.includes(cb.value);
+        });
+
+        refreshSummaryTable();
+      }
+
+      // ================================================================================================
+      // 새로운 테이블 렌더링 (기존 refreshSummaryTable 수정)
+      // ================================================================================================
+      function refreshSummaryTable() {
+        // 그룹핑이 설정되어 있으면 고급 요약 방식 사용
+        if (summaryGroupKeys && summaryGroupKeys.some((k) => k)) {
+          renderAdvancedSummaryNew();
+          return;
+        }
+
+        // 기본 방식: 단순 리스트
+        renderBasicSummaryNew();
+      }
+
+      function renderBasicSummaryNew() {
+        const tbody = document.getElementById("summaryTableBody");
+        if (!tbody) return;
+
+        tbody.innerHTML = "";
+
+        // 헤더 업데이트
+        updateSummaryTableHeader();
+
+        combinedItems.forEach((item, index) => {
+          const tr = document.createElement("tr");
+          tr.className = "summary-item-row";
+          tr.dataset.uniqueKey = item._uniqueKey;
+          tr.dataset.guid = item._sourceGuid;
+          tr.dataset.costCode = item._costCode;
+
+          // 체크박스 열
+          const checkTd = document.createElement("td");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.value = item._sourceGuid;
+          checkbox.className = "summary-item-checkbox";
+          checkTd.appendChild(checkbox);
+          tr.appendChild(checkTd);
+
+          // 선택한 필드들만 표시
+          summaryVisibleFields.forEach((field) => {
+            const td = document.createElement("td");
+            let value = item[field];
+
+            // 숫자 포맷팅
+            if (typeof value === "number") {
+              value = formatNumber(value);
+            }
+
+            td.textContent = value || "";
+            td.title = value || "";
+            tr.appendChild(td);
+          });
+
+          // 행 클릭 이벤트
+          tr.addEventListener("click", (e) => {
+            if (e.target.type === "checkbox") return;
+            handleSummaryItemClick(item, tr, e);
+          });
+
+          tbody.appendChild(tr);
+        });
+
+        console.log(
+          `✅ 기본 요약표 렌더링 완료: ${combinedItems.length}개 항목`
+        );
+      }
+
+      // ================================================================================================
+      // 테이블 헤더 업데이트
+      // ================================================================================================
+      function updateSummaryTableHeader() {
+        const thead = document.querySelector("#summaryTable thead tr");
+        if (!thead) return;
+
+        // 기존 헤더 (체크박스 제외) 제거
+        while (thead.children.length > 1) {
+          thead.removeChild(thead.lastChild);
+        }
+
+        // 선택한 필드들로 헤더 재구성
+        summaryVisibleFields.forEach((field) => {
+          const th = document.createElement("th");
+          th.textContent = field;
+          thead.appendChild(th);
+        });
+      }
+
+      // ================================================================================================
+      // 요약표 항목 클릭 핸들러
+      // ================================================================================================
+      function handleSummaryItemClick(item, row, event) {
+        const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+
+        // 해당 객체 선택
+        if (item._sourceGuid) {
+          const guids = additive
+            ? Array.from(window.selectedGuids).concat([item._sourceGuid])
+            : [item._sourceGuid];
+
+          window.selectRowsByGuids([...new Set(guids)]);
+
+          if (window.ifcViewer) {
+            window.ifcViewer.setSelection([...new Set(guids)]);
+          }
+        }
+
+        // 테이블 행 하이라이트
+        if (!additive) {
+          document
+            .querySelectorAll(".summary-item-row")
+            .forEach((r) => r.classList.remove("selected-main"));
+        }
+        row.classList.add("selected-main");
+      }
+
+      // ================================================================================================
+      // 고급 요약 렌더링 (그룹핑 적용)
+      // ================================================================================================
+      function renderAdvancedSummaryNew() {
+        const tbody = document.getElementById("summaryTableBody");
+        if (!tbody) return;
+
+        tbody.innerHTML = "";
+        updateSummaryTableHeader();
+
+        // 그룹핑된 트리 구축
+        const tree = buildGroupedTree(
+          combinedItems,
+          summaryGroupKeys.filter((k) => k)
+        );
+
+        // 렌더링
+        renderGroupedTreeNew(tbody, tree, 0, "");
+
+        console.log(`✅ 고급 요약표 렌더링 완료`);
+      }
+
+      function buildGroupedTree(items, groupKeys) {
+        if (groupKeys.length === 0) return { items };
+
+        const grouped = {};
+        const key = groupKeys[0];
+
+        items.forEach((item) => {
+          let value = item[key] || "N/A";
+          if (!grouped[value]) {
+            grouped[value] = [];
+          }
+          grouped[value].push(item);
+        });
+
+        Object.keys(grouped).forEach((value) => {
+          if (groupKeys.length > 1) {
+            grouped[value] = buildGroupedTree(
+              grouped[value],
+              groupKeys.slice(1)
+            );
+          } else {
+            grouped[value] = { items: grouped[value] };
+          }
+        });
+
+        return grouped;
+      }
+
+      function renderGroupedTreeNew(tbody, tree, depth, pathKey) {
+        Object.entries(tree).forEach(([key, value]) => {
+          if (key === "items") {
+            // 리프 노드 - 실제 아이템들 렌더링
+            value.forEach((item) => {
+              const tr = document.createElement("tr");
+              tr.className = "summary-item-row";
+              tr.dataset.uniqueKey = item._uniqueKey;
+              tr.dataset.guid = item._sourceGuid;
+
+              // 체크박스
+              const checkTd = document.createElement("td");
+              const checkbox = document.createElement("input");
+              checkbox.type = "checkbox";
+              checkbox.value = item._sourceGuid;
+              checkbox.className = "summary-item-checkbox";
+              checkTd.appendChild(checkbox);
+              tr.appendChild(checkTd);
+
+              // 데이터 셀들
+              summaryVisibleFields.forEach((field) => {
+                const td = document.createElement("td");
+                let val = item[field];
+                if (typeof val === "number") val = formatNumber(val);
+                td.textContent = val || "";
+                tr.appendChild(td);
+              });
+
+              tr.addEventListener("click", (e) => {
+                if (e.target.type === "checkbox") return;
+                handleSummaryItemClick(item, tr, e);
+              });
+
+              tbody.appendChild(tr);
+            });
+          } else {
+            // 그룹 헤더
+            const currentPath = pathKey + "|" + key;
+            const isExpanded = !advExpanded.has(currentPath);
+            const symbol = isExpanded ? "▼" : "▶";
+
+            const tr = document.createElement("tr");
+            tr.className = "adv-group-header";
+
+            const td = document.createElement("td");
+            td.colSpan = summaryVisibleFields.length + 1;
+            td.textContent = `${" ".repeat(depth * 2)}${symbol} ${key}`;
+            tr.appendChild(td);
+
+            tr.addEventListener("click", () => {
+              if (isExpanded) advExpanded.add(currentPath);
+              else advExpanded.delete(currentPath);
+              renderAdvancedSummaryNew();
+            });
+
+            tbody.appendChild(tr);
+
+            if (isExpanded) {
+              renderGroupedTreeNew(tbody, value, depth + 1, currentPath);
+            }
+          }
+        });
+      }
+
+      // ================================================================================================
+      // 요약표 전용 이벤트 핸들러들
+      // ================================================================================================
+      function setupSummaryEventHandlers() {
+        // 전체 선택 체크박스 (요약표용)
+        document.addEventListener("change", function (e) {
+          if (e.target.id === "summarySelectAllCheckbox") {
+            const isChecked = e.target.checked;
+            const checkboxes = document.querySelectorAll(
+              ".summary-item-checkbox"
+            );
+            checkboxes.forEach((cb) => (cb.checked = isChecked));
+
+            // 선택된 GUID들 수집
+            const guids = Array.from(
+              document.querySelectorAll(".summary-item-checkbox:checked")
+            )
+              .map((cb) => cb.value)
+              .filter(Boolean);
+
+            window.selectRowsByGuids(guids);
+            if (window.ifcViewer) {
+              window.ifcViewer.setSelection(guids);
+            }
+          }
+        });
+
+        // 개별 체크박스
+        document.addEventListener("change", function (e) {
+          if (e.target.classList.contains("summary-item-checkbox")) {
+            const checkboxes = document.querySelectorAll(
+              ".summary-item-checkbox"
+            );
+            const checkedBoxes = document.querySelectorAll(
+              ".summary-item-checkbox:checked"
+            );
+
+            // 전체 선택 체크박스 상태 업데이트
+            const selectAllBox = document.getElementById(
+              "summarySelectAllCheckbox"
+            );
+            if (selectAllBox) {
+              selectAllBox.checked = checkedBoxes.length === checkboxes.length;
+              selectAllBox.indeterminate =
+                checkedBoxes.length > 0 &&
+                checkedBoxes.length < checkboxes.length;
+            }
+
+            // 뷰어와 테이블 동기화
+            const guids = Array.from(checkedBoxes)
+              .map((cb) => cb.value)
+              .filter(Boolean);
+            window.selectRowsByGuids(guids);
+            if (window.ifcViewer) {
+              window.ifcViewer.setSelection(guids);
+            }
+          }
+        });
+      }
+
       // 페이지 로딩 시 안내 메시지 추가
       document.addEventListener("DOMContentLoaded", function () {
         // 기존 초기화 함수들
@@ -401,8 +1032,10 @@
         loadIFCObjects();
         loadSummaryTable();
         initSummaryGroupingUI();
-
         setupEventHandlers();
+
+        // 새로운 요약표 이벤트 핸들러 추가
+        setupSummaryEventHandlers();
 
         // 사용법 안내를 위한 툴팁 추가
         const saveBtn = document.getElementById("saveIFCBtn");
@@ -457,7 +1090,9 @@
         });
       }
       function populateSummaryGroupCombos() {
-        const choices = [...headers].sort((a, b) => a.localeCompare(b));
+        // 기존 IFC 객체 헤더들과 새로운 조합 필드들 합치기
+        const allHeaders = new Set([...headers, ...summaryAllFields]);
+        const choices = [...allHeaders].sort((a, b) => a.localeCompare(b));
 
         ["summaryGroup1", "summaryGroup2", "summaryGroup3"].forEach((id) => {
           const sel = document.getElementById(id);
@@ -556,9 +1191,6 @@
       }
 
       // IFC 객체 데이터 로드 (API 경로 수정)
-      // 기존 함수를 이걸로 교체
-      // IFC 객체 데이터 로드 (API 경로 수정)
-      // 기존 함수를 이걸로 "그대로" 교체하세요
       function loadIFCObjects() {
         const url = `/dd_by_ifc/api/ifc_objects/${PROJECT_ID}/`;
 
@@ -601,8 +1233,7 @@
             if (typeof populateSummaryGroupCombos === "function") {
               populateSummaryGroupCombos();
             }
-            if (typeof refreshSummaryTable === "function")
-              refreshSummaryTable();
+            if (typeof loadSummaryTable === "function") loadSummaryTable(); // 새로운 방식으로 요약표 다시 로드
 
             // 선택 유지 & 스타일 반영
             if (prevSelected.size) {
@@ -641,38 +1272,6 @@
             alert("IFC 객체를 로드하는데 실패했습니다: " + error.message);
             throw error;
           });
-      }
-
-      // 요약 테이블 로드 (API 경로 수정)
-      // 요약 테이블 로드 (API 경로 수정)
-      function loadSummaryTable() {
-        fetch(`/dd_by_ifc/api/summary_table/${PROJECT_ID}/`)
-          .then((response) => {
-            if (!response.ok)
-              throw new Error(
-                `HTTP ${response.status}: ${response.statusText}`
-              );
-            return response.json();
-          })
-          .then((data) => {
-            latestSummaryData = data.summary_data;
-            document.getElementById("summaryTotalLabel").textContent =
-              "요약 총 금액: " + data.total_sum.toLocaleString("ko-KR") + " 원";
-            refreshSummaryTable(); // ← 여기!
-            console.log(`✅ 요약 테이블 로드 완료`);
-          })
-          .catch((error) => {
-            console.error("❌ 요약 테이블 로드 실패:", error);
-            alert("요약 테이블을 로드하는데 실패했습니다: " + error.message);
-          });
-      }
-      function refreshSummaryTable() {
-        // 그룹 선택이 모두 비어있으면 기존 방식 유지
-        if (summaryGroupKeys.every((k) => !k)) {
-          updateSummaryTableDisplay(latestSummaryData); // 기존 함수 그대로
-        } else {
-          renderAdvancedSummary(); // 새 방식
-        }
       }
 
       // 이벤트 핸들러 설정
@@ -991,14 +1590,6 @@
       }
 
       // 그룹화된 테이블 업데이트
-      // ────────────────────────────────────────────────────────────────
-      // 완성본: updateGroupedTable()
-      //  - 기준코드 스타일의 선택/동기화/그룹핑/헤더생성 모두 포함
-      //  - 외부에서 필요한 전역: objectData, headers, visibleHeaders,
-      //    collapsedGroups(Set), guidToRow(Map), selectedGuids(Set),
-      //    createObjectRow(obj, idx), applyTableSelectionStyles(),
-      //    handleObjectSelection(), toggleGroup(key)  (이미 있다면 그대로 사용)
-      // ────────────────────────────────────────────────────────────────
       function updateGroupedTable() {
         const container = document.getElementById("ifcTablecontainer_");
         if (!container) return;
@@ -1632,118 +2223,6 @@
           e.target.closest("tr").classList.add("selected");
         }
       });
-      // ────────────────────────────────────────────────
-      // 요약표 행 클릭 → 해당 코드의 모든 객체 선택 & 동기화
-      // ────────────────────────────────────────────────
-      document.addEventListener("click", (e) => {
-        const expanderClicked = e.target.closest(".summary-expander-btn");
-        // expander 버튼 클릭이면 여기서 처리하지 않음 (기존 토글 핸들러에 맡김)
-        if (expanderClicked) return;
-
-        const tr = e.target.closest(".summary-code-row");
-        if (!tr) return; // 요약표 코드행이 아님
-        const code = tr.dataset.code;
-        if (!code) return;
-
-        // 객체 GUID 목록 추출
-        const objs = codeToObjects.get(code) || [];
-        const guids = objs
-          .map((o) => o.GlobalId || o.globalId || o.GUID || o.Guid)
-          .filter(Boolean);
-
-        // 선택 반영
-        selectRowsByGuids(guids);
-        if (window.ifcViewer) {
-          window.ifcViewer.setSelection(guids);
-        }
-
-        // 요약표 행 하이라이트
-        document
-          .querySelectorAll(".summary-code-row")
-          .forEach((r) => r.classList.remove("selected-main"));
-        tr.classList.add("selected-main");
-
-        // 하위(펼친) 표가 있다면 그 안의 행들도 하이라이트
-        if (expandedCodes.has(code)) {
-          const tbody = document.querySelector(
-            `.summary-child-row[data-code="${code}"] table.summary-child-table tbody`
-          );
-          if (tbody) {
-            tbody.querySelectorAll("tr").forEach((r) => {
-              if (guids.includes(r.dataset.guid))
-                r.classList.add("selected-row");
-              else r.classList.remove("selected-row");
-            });
-          }
-        }
-      });
-      document.addEventListener("click", (e) => {
-        const expanderClicked = e.target.closest(".summary-expander-btn");
-        if (expanderClicked) return;
-
-        // 기본/고급 모두 '.summary-code-row'
-        const tr = e.target.closest(".summary-code-row");
-        if (!tr) return;
-        // 고급 모드면 dataset.ckey 사용
-        const ckey = tr.dataset.ckey;
-        let code = tr.dataset.code;
-
-        // 객체 GUID 목록 추출
-        let objs = [];
-        if (ckey) {
-          // 고급 모드
-          // adv 트리에서 찾아야 하지만, childRow가 이미 만들어진 경우 객체테이블에 존재
-          const childTbody = document.querySelector(
-            `.summary-child-row[data-ckey="${ckey}"] tbody`
-          );
-          if (childTbody) {
-            objs = Array.from(childTbody.querySelectorAll("tr")).map((r) => ({
-              guid: r.dataset.guid,
-            }));
-          } else {
-            // child 안 펼친 상태면 codeToObjects 사용 (전체)
-            objs = codeToObjects.get(code) || [];
-          }
-        } else {
-          objs = codeToObjects.get(code) || [];
-        }
-        const guids = objs
-          .map((o) => o.guid || o.GlobalId || o.globalId || o.GUID || o.Guid)
-          .filter(Boolean);
-
-        selectRowsByGuids(guids);
-        if (window.ifcViewer) window.ifcViewer.setSelection(guids);
-
-        document
-          .querySelectorAll(".summary-code-row")
-          .forEach((r) => r.classList.remove("selected-main"));
-        tr.classList.add("selected-main");
-
-        // 하위 테이블 하이라이트
-        if (ckey) {
-          const tbody = document.querySelector(
-            `.summary-child-row[data-ckey="${ckey}"] tbody`
-          );
-          if (tbody) {
-            tbody.querySelectorAll("tr").forEach((r) => {
-              if (guids.includes(r.dataset.guid))
-                r.classList.add("selected-row");
-              else r.classList.remove("selected-row");
-            });
-          }
-        } else if (expandedCodes.has(code)) {
-          const tbody = document.querySelector(
-            `.summary-child-row[data-code="${code}"] table.summary-child-table tbody`
-          );
-          if (tbody) {
-            tbody.querySelectorAll("tr").forEach((r) => {
-              if (guids.includes(r.dataset.guid))
-                r.classList.add("selected-row");
-              else r.classList.remove("selected-row");
-            });
-          }
-        }
-      });
 
       // 코드 파일 업로드 처리 (API 경로 수정)
       function handleCostCodeFileUpload(event) {
@@ -1781,570 +2260,6 @@
           });
       }
 
-      /* ======================================================================
-   공사코드별 객체 펼치기 – Summary Table 확장판
-   - 기존 updateSummaryTableDisplay() 교체
-   - codeToObjects / expandedCodes / latestSummaryData 사용
-   - nested table 클릭 시 3D/IFC테이블 동기화
-====================================================================== */
-
-      // 코스트코드 ↔ 객체 매핑 생성
-      function buildCodeToObjectsMap() {
-        codeToObjects.clear();
-        if (!Array.isArray(objectData)) return;
-
-        objectData.forEach((obj) => {
-          let s =
-            obj.CostItems || (obj.Properties && obj.Properties.CostItems) || "";
-          if (!s) return;
-          const codes = s
-            .split("+")
-            .map((c) => c.trim())
-            .filter(Boolean);
-          codes.forEach((code) => {
-            if (!codeToObjects.has(code)) codeToObjects.set(code, []);
-            codeToObjects.get(code).push(obj);
-          });
-        });
-      }
-
-      // 요약표 UI 갱신
-      function updateSummaryTableDisplay(summaryData) {
-        const tbody = document.getElementById("summaryTableBody");
-        if (!tbody) return;
-        tbody.innerHTML = "";
-
-        summaryData.forEach((item) => {
-          if (item.type === "group") {
-            const tr = document.createElement("tr");
-            tr.className = "group-header";
-
-            const td = document.createElement("td");
-            td.colSpan = 15; // 14컬럼 + expander col
-            td.textContent = `▼ 공종: ${item.group} (총금액: ${formatNumber(
-              item.total
-            )} 원)`;
-            tr.appendChild(td);
-
-            tbody.appendChild(tr);
-            return;
-          }
-
-          // 일반 코드 행
-          const tr = document.createElement("tr");
-          tr.dataset.code = item.code || "";
-          tr.className = "summary-code-row";
-
-          // 펼치기 버튼 셀
-          const tdBtn = document.createElement("td");
-          tdBtn.className = "expander-col";
-          const btn = document.createElement("button");
-          btn.className = "summary-expander-btn";
-          btn.dataset.code = item.code || "";
-          btn.textContent = expandedCodes.has(item.code) ? "−" : "+";
-          tdBtn.appendChild(btn);
-          tr.appendChild(tdBtn);
-
-          // 나머지 데이터 셀들
-          tr.innerHTML += `
-      <td>${item.code || ""}</td>
-      <td>${item.category || ""}</td>
-      <td>${item.name || ""}</td>
-      <td>${item.specification || ""}</td>
-      <td>${item.unit || ""}</td>
-      <td>${formatNumber(item.quantity)}</td>
-      <td>${formatNumber(item.material_unit_price)}</td>
-      <td>${formatNumber(item.material_amount)}</td>
-      <td>${formatNumber(item.labor_unit_price)}</td>
-      <td>${formatNumber(item.labor_amount)}</td>
-      <td>${formatNumber(item.expense_unit_price)}</td>
-      <td>${formatNumber(item.expense_amount)}</td>
-      <td>${formatNumber(item.total_unit_price)}</td>
-      <td>${formatNumber(item.total_amount)}</td>
-    `;
-
-          tbody.appendChild(tr);
-
-          // 펼쳐진 상태면 하위(객체) 테이블 렌더링
-          if (expandedCodes.has(item.code)) {
-            const childTr = document.createElement("tr");
-            childTr.className = "summary-child-row";
-            childTr.dataset.code = item.code;
-
-            const td = document.createElement("td");
-            td.colSpan = 15;
-
-            const wrapper = document.createElement("div");
-            wrapper.className = "summary-child-wrapper";
-            wrapper.appendChild(createNestedObjectTable(item.code));
-
-            td.appendChild(wrapper);
-            childTr.appendChild(td);
-            tbody.appendChild(childTr);
-          }
-        });
-      }
-      // ─────────────────────────────────────────────
-      // 1) 객체 -> (선택속성1 -> 선택속성2 -> 선택속성3) -> 코드 -> 집계
-      // ─────────────────────────────────────────────
-      function renderAdvancedSummary() {
-        const tbody = document.getElementById("summaryTableBody");
-        if (!tbody) return;
-        tbody.innerHTML = "";
-
-        const tree = buildPropCodeTree(objectData, summaryGroupKeys);
-
-        // 렌더
-        let rowCount = 0;
-        function renderNode(node, depth, pathKeyPrefix) {
-          // node 형식:
-          // { _type:'group', keyName:'속성명', value:'속성값', children:{...}, totals:{...} }
-          // { _type:'code', code:'XXXX', category:'토목', totals:{...}, objects:[...] }
-
-          if (node._type === "group") {
-            const thisKey =
-              pathKeyPrefix + "|g|" + node.keyName + ":" + node.value;
-            const collapsed = !advExpanded.has(thisKey);
-            const symbol = collapsed ? "▶" : "▼";
-            // 그룹 헤더 행 (colSpan: 15)
-            const tr = document.createElement("tr");
-            tr.className = "adv-group-header";
-            const td = document.createElement("td");
-            td.colSpan = 15;
-            td.textContent = `${" ".repeat(depth * 2)}${symbol} ${
-              node.keyName
-            }: ${node.value} (금액 ${formatNumber(
-              node.totals.total_amount
-            )} 원 / 객체 ${node.totals.count}개)`;
-            tr.appendChild(td);
-            tr.addEventListener("click", () => {
-              if (collapsed) advExpanded.add(thisKey);
-              else advExpanded.delete(thisKey);
-              renderAdvancedSummary();
-            });
-            tbody.appendChild(tr);
-
-            if (!collapsed) {
-              Object.values(node.children).forEach((child) => {
-                renderNode(child, depth + 1, thisKey);
-              });
-            }
-          } else if (node._type === "code") {
-            // 코드 행
-            const codeKey = pathKeyPrefix + "|c|" + node.code;
-            const expanded = advCodeExpanded.has(codeKey);
-            const btnTxt = expanded ? "−" : "+";
-
-            const tr = document.createElement("tr");
-            tr.className = "summary-code-row";
-            tr.dataset.code = node.code;
-            tr.dataset.ckey = codeKey;
-
-            // 펼치기 버튼
-            const tdBtn = document.createElement("td");
-            tdBtn.className = "expander-col";
-            const btn = document.createElement("button");
-            btn.className = "summary-expander-btn";
-            btn.dataset.ckey = codeKey;
-            btn.textContent = btnTxt;
-            tdBtn.appendChild(btn);
-            tr.appendChild(tdBtn);
-
-            // 나머지 14개 컬럼 (공사코드/공종/명칭/규격/단위/수량/…)
-            tr.innerHTML += `
-        <td>${node.code}</td>
-        <td>${node.category || ""}</td>
-        <td>${node.name || ""}</td>
-        <td>${node.spec || ""}</td>
-        <td>${node.unit || ""}</td>
-        <td>${formatNumber(node.totals.quantity)}</td>
-        <td>${formatNumber(node.totals.material_unit_price)}</td>
-        <td>${formatNumber(node.totals.material_amount)}</td>
-        <td>${formatNumber(node.totals.labor_unit_price)}</td>
-        <td>${formatNumber(node.totals.labor_amount)}</td>
-        <td>${formatNumber(node.totals.expense_unit_price)}</td>
-        <td>${formatNumber(node.totals.expense_amount)}</td>
-        <td>${formatNumber(node.totals.total_unit_price)}</td>
-        <td>${formatNumber(node.totals.total_amount)}</td>
-      `;
-            tbody.appendChild(tr);
-
-            // 펼침 상태면 객체 리스트 테이블
-            if (expanded) {
-              const childTr = document.createElement("tr");
-              childTr.className = "summary-child-row";
-              childTr.dataset.ckey = codeKey;
-              const td = document.createElement("td");
-              td.colSpan = 15;
-
-              const wrapper = document.createElement("div");
-              wrapper.className = "summary-child-wrapper";
-              wrapper.appendChild(createNestedObjectTableForList(node.objects));
-
-              td.appendChild(wrapper);
-              childTr.appendChild(td);
-              tbody.appendChild(childTr);
-            }
-          }
-        }
-
-        Object.values(tree).forEach((rootNode) =>
-          renderNode(rootNode, 0, "root")
-        );
-      }
-
-      // 트리 구축
-      function buildPropCodeTree(objects, groupKeys) {
-        // groupKeys: ["층","Zone", ...] 와 비슷
-        // 결과는 { nodeKey : nodeObj } 상위 루트만 반환
-        const root = {};
-
-        // 요약 데이터를 계산하기 위해 latestSummaryData(전체)보다 객체 기반 집계 필요
-        // 객체 총금액이 여러 코드에 나뉘는 문제 -> **단순 균등 분배(코드 개수로 나눔)** 로 처리
-        objects.forEach((obj) => {
-          const codesStr =
-            obj.CostItems || (obj.Properties && obj.Properties.CostItems) || "";
-          if (!codesStr) return;
-          const codes = codesStr
-            .split("+")
-            .map((c) => c.trim())
-            .filter(Boolean);
-          if (!codes.length) return;
-
-          const perCodeRatio = 1 / codes.length;
-
-          // 코스트 항목 열
-          const totalsObj = extractNumericFields(obj); // 총금액 등
-
-          const propVals = groupKeys.map((k) => getPropVal(obj, k));
-          // 경로 타고 들어가며 노드 생성
-          let container = root;
-          groupKeys.forEach((keyName, idx) => {
-            if (!keyName) return; // 빈 값이면 스킵
-            const val = propVals[idx] ?? "N/A";
-            const gKey = `${keyName}:${val}`;
-            if (!container[gKey]) {
-              container[gKey] = {
-                _type: "group",
-                keyName,
-                value: val,
-                totals: initTotals(),
-                children: {},
-              };
-            }
-            // 누계
-            addTotals(container[gKey].totals, totalsObj);
-            container = container[gKey].children;
-          });
-
-          // 코드 단위 노드
-          codes.forEach((code) => {
-            const codeKey = "code:" + code;
-            if (!container[codeKey]) {
-              const cinfo = codeData[code] || {};
-              container[codeKey] = {
-                _type: "code",
-                code,
-                category: cinfo["공종"] || "",
-                name: cinfo["명칭"] || "",
-                spec: cinfo["규격"] || "",
-                unit: cinfo["단위"] || "",
-                totals: initTotals(),
-                objects: [],
-              };
-            }
-
-            // 코드 노드에 균등분배하여 합산
-            const portion = scaleTotals(totalsObj, perCodeRatio);
-            addTotals(container[codeKey].totals, portion);
-
-            // 객체 push
-            container[codeKey].objects.push(obj);
-          });
-        });
-
-        return root;
-      }
-
-      // 숫자 필드 추출 (필요시 필드명 조정)
-      function extractNumericFields(obj) {
-        // 서버가 내려준 objectData에 어떤 이름으로 들어있는지 그대로 사용
-        return {
-          quantity: +obj["수량"] || 0,
-          material_unit_price: +obj["재료비단가"] || 0,
-          material_amount: +obj["재료비"] || 0,
-          labor_unit_price: +obj["노무비단가"] || 0,
-          labor_amount: +obj["노무비"] || 0,
-          expense_unit_price: +obj["경비단가"] || 0,
-          expense_amount: +obj["경비"] || 0,
-          total_unit_price: +obj["합계단가"] || 0,
-          total_amount: +obj["총금액"] || 0,
-          count: 1,
-        };
-      }
-      function initTotals() {
-        return {
-          quantity: 0,
-          material_unit_price: 0,
-          material_amount: 0,
-          labor_unit_price: 0,
-          labor_amount: 0,
-          expense_unit_price: 0,
-          expense_amount: 0,
-          total_unit_price: 0,
-          total_amount: 0,
-          count: 0,
-        };
-      }
-      function addTotals(target, src) {
-        Object.keys(target).forEach((k) => {
-          target[k] += src[k] || 0;
-        });
-      }
-      function scaleTotals(src, ratio) {
-        const out = {};
-        Object.keys(src).forEach((k) => {
-          out[k] = src[k] * ratio;
-        });
-        return out;
-      }
-
-      function getPropVal(obj, key) {
-        if (!key) return undefined;
-        if (obj[key] !== undefined) return obj[key];
-        if (obj.Properties && obj.Properties[key] !== undefined)
-          return obj.Properties[key];
-        if (obj.Quantities && obj.Quantities[key] !== undefined)
-          return obj.Quantities[key];
-        return "N/A";
-      }
-
-      // 하위 객체테이블 생성
-      function createNestedObjectTable(code) {
-        const objs = codeToObjects.get(code) || [];
-
-        // 표시할 컬럼(기본은 visibleHeaders, 없으면 일부 기본값)
-        const cols =
-          visibleHeaders && visibleHeaders.length
-            ? visibleHeaders
-            : [
-                "GlobalId",
-                "Name",
-                "IfcClass",
-                "SpatialContainer",
-                "총금액",
-                "CostItems",
-              ];
-
-        const table = document.createElement("table");
-        table.className = "summary-child-table";
-        table.dataset.code = code;
-
-        const thead = document.createElement("thead");
-        const hr = document.createElement("tr");
-        cols.forEach((h) => {
-          const th = document.createElement("th");
-          th.textContent = h.split(".").pop();
-          hr.appendChild(th);
-        });
-        thead.appendChild(hr);
-        table.appendChild(thead);
-
-        const tbody = document.createElement("tbody");
-
-        // 값 꺼내는 유틸
-        const getVal = (obj, key) => {
-          let v = obj[key];
-          if (
-            v === undefined &&
-            obj.Quantities &&
-            obj.Quantities[key] !== undefined
-          )
-            v = obj.Quantities[key];
-          if (
-            v === undefined &&
-            obj.Properties &&
-            obj.Properties[key] !== undefined
-          )
-            v = obj.Properties[key];
-          return v;
-        };
-
-        if (!summaryGroupBy) {
-          // ====== 그룹핑 없음: 기존 그대로 렌더 ======
-          objs.forEach((obj) => {
-            appendObjRow(obj, tbody, cols);
-          });
-        } else {
-          // ====== 그룹핑 있음 ======
-          const groups = {};
-          objs.forEach((obj) => {
-            let v = getVal(obj, summaryGroupBy);
-            if (v === undefined || v === null || v === "") v = "N/A";
-            if (!groups[v]) groups[v] = [];
-            groups[v].push(obj);
-          });
-
-          Object.entries(groups).forEach(([gval, list]) => {
-            // 그룹 헤더 행
-            const gtr = document.createElement("tr");
-            gtr.className = "child-group-header";
-            const gtd = document.createElement("td");
-            gtd.colSpan = cols.length;
-            // 총금액 합계 등 간단 요약
-            const totalAmt = list.reduce((s, o) => {
-              const n = Number(getVal(o, "총금액"));
-              return isNaN(n) ? s : s + n;
-            }, 0);
-            gtd.textContent = `${summaryGroupBy}: ${gval}  (객체 ${
-              list.length
-            }개, 총금액 ${formatNumber(totalAmt)} 원)`;
-            gtr.appendChild(gtd);
-            tbody.appendChild(gtr);
-
-            // 해당 그룹 객체들
-            list.forEach((obj) => {
-              appendObjRow(obj, tbody, cols);
-            });
-          });
-        }
-
-        table.appendChild(tbody);
-        return table;
-
-        // 내부 헬퍼: 객체 한 행 추가 + 클릭 동기화
-        function appendObjRow(obj, tbody, cols) {
-          const tr = document.createElement("tr");
-          const guid =
-            obj.GlobalId || obj.globalId || obj.GUID || obj.Guid || "";
-          tr.dataset.guid = guid;
-
-          cols.forEach((h) => {
-            let v = getVal(obj, h);
-            if (typeof v === "number") v = formatNumber(v);
-            const td = document.createElement("td");
-            td.textContent = v ?? "";
-            tr.appendChild(td);
-          });
-
-          tr.addEventListener("click", () => {
-            if (guid) {
-              selectRowsByGuids([guid]);
-              if (window.ifcViewer) window.ifcViewer.setSelection([guid]);
-
-              // nested table 선택 스타일
-              tbody
-                .querySelectorAll("tr")
-                .forEach((r) => r.classList.remove("selected-row"));
-              tr.classList.add("selected-row");
-            }
-          });
-
-          tbody.appendChild(tr);
-        }
-      }
-
-      // 요약표 토글 이벤트(Delegation)
-      document.addEventListener("click", (e) => {
-        const btn = e.target.closest(".summary-expander-btn");
-        if (!btn) return;
-        const code = btn.dataset.code;
-        if (!code) return;
-
-        if (expandedCodes.has(code)) expandedCodes.delete(code);
-        else expandedCodes.add(code);
-
-        // 다시 렌더링
-        updateSummaryTableDisplay(latestSummaryData);
-      });
-
-      // 기존 버튼 토글 핸들러 유지 + 고급요약용 분기
-      document.addEventListener("click", (e) => {
-        const btn = e.target.closest(".summary-expander-btn");
-        if (!btn) return;
-
-        // 고급 요약 모드인지 확인
-        const ckey = btn.dataset.ckey;
-        if (ckey) {
-          // 고급요약 코드행
-          if (advCodeExpanded.has(ckey)) advCodeExpanded.delete(ckey);
-          else advCodeExpanded.add(ckey);
-          renderAdvancedSummary();
-          return;
-        }
-
-        // 기존 기본요약 모드
-        const code = btn.dataset.code;
-        if (!code) return;
-        if (expandedCodes.has(code)) expandedCodes.delete(code);
-        else expandedCodes.add(code);
-        updateSummaryTableDisplay(latestSummaryData);
-      });
-
-      function createNestedObjectTableForList(objs) {
-        const cols =
-          visibleHeaders && visibleHeaders.length
-            ? visibleHeaders
-            : [
-                "GlobalId",
-                "Name",
-                "IfcClass",
-                "SpatialContainer",
-                "총금액",
-                "CostItems",
-              ];
-
-        const table = document.createElement("table");
-        table.className = "summary-child-table";
-
-        const thead = document.createElement("thead");
-        const hr = document.createElement("tr");
-        cols.forEach((h) => {
-          const th = document.createElement("th");
-          th.textContent = h.split(".").pop();
-          hr.appendChild(th);
-        });
-        thead.appendChild(hr);
-        table.appendChild(thead);
-
-        const tbody = document.createElement("tbody");
-        const getVal = (o, k) => {
-          let v = o[k];
-          if (v === undefined && o.Quantities && o.Quantities[k] !== undefined)
-            v = o.Quantities[k];
-          if (v === undefined && o.Properties && o.Properties[k] !== undefined)
-            v = o.Properties[k];
-          return v;
-        };
-        objs.forEach((obj) => {
-          const tr = document.createElement("tr");
-          const guid =
-            obj.GlobalId || obj.globalId || obj.GUID || obj.Guid || "";
-          tr.dataset.guid = guid;
-          cols.forEach((h) => {
-            let v = getVal(obj, h);
-            if (typeof v === "number") v = formatNumber(v);
-            const td = document.createElement("td");
-            td.textContent = v ?? "";
-            tr.appendChild(td);
-          });
-          tr.addEventListener("click", () => {
-            if (guid) {
-              selectRowsByGuids([guid]);
-              if (window.ifcViewer) window.ifcViewer.setSelection([guid]);
-              tbody
-                .querySelectorAll("tr")
-                .forEach((r) => r.classList.remove("selected-row"));
-              tr.classList.add("selected-row");
-            }
-          });
-          tbody.appendChild(tr);
-        });
-
-        table.appendChild(tbody);
-        return table;
-      }
-
       // 숫자 콤마/소수점 포맷 유틸
       function formatNumber(val) {
         if (val === undefined || val === null || val === "") return "";
@@ -2367,8 +2282,6 @@
     </script>
 
     <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
-    <!-- ─────────────────────────────  WASM 기반 IFC Viewer  ───────────────────────────── -->
-    <!-- ─────────────────────────────  WASM 기반 IFC Viewer (기준코드 이식판) ───────────────────────────── -->
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -3097,7 +3010,7 @@
       console.log("🎮 viewerControls.* 사용 가능");
     </script>
 
-    <!-- ─────────────────────────────  페이지 전용 스타일 (테이블 축소 등)  ───────────────────────────── -->
+    <!-- ─────────────────────────────  페이지 전용 스타일  ───────────────────────────── -->
     <style>
       .group-header {
         background-color: #e0e0e0 !important;
@@ -3133,10 +3046,6 @@
         background-color: #007bff;
         color: white;
       }
-
-      /* 테이블 */
-
-      /* 셀 */
 
       .column-selector {
         margin-top: 15px;
@@ -3212,9 +3121,9 @@
         width: 30%;
         padding-right: 15px;
       }
-      /* ④ 우측 패널을 세로 flex 레이아웃으로 ------------------------------------ */
+      /* ④ 우측 패널을 세로 flex 레이아웃으로 ------------------------------------ */
       .right-panel {
-        display: flex; /* 세로 쌓기 */
+        display: flex; /* 세로 쌓기 */
         flex-direction: column;
         height: 100%; /* 부모 높이만큼 */
       }
@@ -3222,9 +3131,9 @@
       /* ⑤ IFC 테이블 영역 – 남는 높이 전부 채우기 ------------------------------- */
       #ifcTablecontainer_ {
         flex: 1 1 auto; /* 남는 공간 100% 확보 */
-        min-height: 0; /* flex 스크롤 정상 작동용 */
+        min-height: 0; /* flex 스크롤 정상 작동용 */
         overflow-y: auto; /* 내용이 넘치면 세로 스크롤 */
-        max-height: none !important; /* 기존 inline 400px 제한 해제 */
+        max-height: none !important; /* 기존 inline 400px 제한 해제 */
       }
 
       .container_detail {
@@ -3306,13 +3215,13 @@
         cursor: pointer;
       }
 
-      /* ③ 왼쪽의 세 개의 액션 버튼(추가/삭제/열기) ------------------------------ */
-      /*   – 빨간색 & 높이 2⁄3 (패딩만 줄이면 됨)                                    */
+      /* ③ 왼쪽의 세 개의 액션 버튼(추가/삭제/열기) ------------------------------ */
+      /*   – 빨간색 & 높이 2⁄3 (패딩만 줄이면 됨)                                    */
       #addCodeBtn,
       #removeCodeBtn,
       #loadCodeBtn {
-        padding: 4px 10px; /* ← 6 → 4 (높이 ≈ 2⁄3) */
-        background: #dc3545; /* Bootstrap danger red */
+        padding: 4px 10px; /* ← 6 → 4 (높이 ≈ 2⁄3) */
+        background: #dc3545; /* Bootstrap danger red */
         border-color: #dc3545;
       }
       #addCodeBtn:hover,
@@ -3392,28 +3301,80 @@
         width: 24px;
         text-align: center;
       }
-      /* Summary main row 선택 표시 */
-      .summary-code-row.selected-main {
+
+      /* 새로운 공종별 내역서 필드 선택 스타일 */
+      .summary-field-selector {
+        margin: 10px 0;
+        padding: 10px;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+      }
+
+      .field-selector-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .field-selector-header h5 {
+        margin: 0;
+        font-size: 14px;
+        color: #495057;
+      }
+
+      .field-selector-buttons {
+        display: flex;
+        gap: 5px;
+      }
+
+      .field-checkboxes-container {
+        max-height: 120px;
+        overflow-y: auto;
+        border: 1px solid #ced4da;
+        border-radius: 3px;
+        background: white;
+        padding: 5px;
+      }
+
+      .field-checkboxes {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 2px 10px;
+      }
+
+      .field-checkbox {
+        display: flex;
+        align-items: center;
+        padding: 2px;
+        font-size: 11px;
+      }
+
+      .field-checkbox input {
+        margin-right: 6px;
+        transform: scale(0.9);
+      }
+
+      .field-checkbox label {
+        cursor: pointer;
+        flex: 1;
+      }
+
+      .summary-item-row:hover {
+        background: #e8f4fd !important;
+        cursor: pointer;
+      }
+
+      .summary-item-row.selected-main {
         background: #ffe8a1 !important;
       }
-      .summary-group-bar label {
-        margin-right: 8px;
+
+      .summary-item-checkbox {
+        margin: 0;
+        transform: scale(0.9);
       }
-      .child-group-header {
-        background: #f3f3f3 !important;
-        font-weight: bold;
-      }
-      /* Summary main row 선택 표시 */
-      .summary-code-row.selected-main {
-        background: #ffe8a1 !important;
-      }
-      .summary-group-bar label {
-        margin-right: 8px;
-      }
-      .child-group-header {
-        background: #f3f3f3 !important;
-        font-weight: bold;
-      }
+
       .adv-group-header {
         background: #ddd !important;
         font-weight: bold;
