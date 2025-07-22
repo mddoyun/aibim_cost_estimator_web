@@ -1651,6 +1651,9 @@
           this.container.appendChild(this.renderer.domElement);
 
           this.modelGroup = new THREE.Group();
+          // 🔧 IFC(Z-up) → three.js(Y-up) 보정
+          this.modelGroup.rotation.set(-Math.PI / 2, 0, 0);
+          this.modelGroup.updateMatrixWorld(true);
           this.scene.add(this.modelGroup);
 
           this.setupLighting();
@@ -2256,7 +2259,6 @@
             }
 
             showLoadingStatus(`✅ 모델 로딩 완료! 총 ${processed}개 객체 처리`);
-            // IFC Z-up -> Three Y-up 회전 필요 없음 (우리는 그대로 사용) / 필요시 viewer.modelGroup.rotation.x = -Math.PI/2;
 
             setTimeout(() => {
               viewer.fitCameraToModel();
