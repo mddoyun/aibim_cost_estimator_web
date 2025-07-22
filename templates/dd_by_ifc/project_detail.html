@@ -105,15 +105,22 @@
         id="summaryGroupBar"
         style="margin: 6px 0 10px 0; font-size: 11px"
       >
-        <label
-          >하위 그룹 기준:
-          <select
-            id="summaryGroupSelect"
-            style="font-size: 11px; padding: 2px 4px"
-          >
+        <div>
+          1단계 그룹:
+          <select id="summaryGroup1" style="font-size: 11px; padding: 2px 4px">
             <option value="">없음</option>
           </select>
-        </label>
+
+          2단계 그룹:
+          <select id="summaryGroup2" style="font-size: 11px; padding: 2px 4px">
+            <option value="">없음</option>
+          </select>
+
+          3단계 그룹:
+          <select id="summaryGroup3" style="font-size: 11px; padding: 2px 4px">
+            <option value="">없음</option>
+          </select>
+        </div>
       </div>
 
       <div class="container_detail">
@@ -313,6 +320,9 @@
       let latestSummaryData = []; // 마지막으로 받은 summary_data 원본 저장
 
       let summaryGroupBy = ""; // 하위 그룹핑 기준 필드명
+      let summaryGroupKeys = ["", "", ""]; // 1,2,3 단계 선택한 속성
+      let advExpanded = new Set(); // 고급 요약(속성+코드) 트리에서 펼친 노드 키
+      let advCodeExpanded = new Set(); // 코드행 펼침(객체 테이블) 키
 
       // 공통 util (전역 노출)
       function applyTableSelectionStyles() {
@@ -429,26 +439,45 @@
           .catch((err) => console.error("기본 코드리스트 로드 실패:", err));
       }
       function initSummaryGroupingUI() {
-        const sel = document.getElementById("summaryGroupSelect");
-        if (!sel) return;
+        const sels = [
+          document.getElementById("summaryGroup1"),
+          document.getElementById("summaryGroup2"),
+          document.getElementById("summaryGroup3"),
+        ];
+        if (!sels.every(Boolean)) return;
 
-        // headers 에서 선택지 구성 (Properties/Quantities 포함 가능)
-        // 이미 visibleHeaders 만들 때 썼던 headers를 그대로 이용
-        const opts = [...headers]; // 필요시 중복 제거/정렬
-        opts.sort((a, b) => a.localeCompare(b));
+        // 최초 한 번만 옵션 넣고, 이후엔 loadIFCObjects 후 다시 호출 가능
+        populateSummaryGroupCombos();
 
-        opts.forEach((h) => {
-          const op = document.createElement("option");
-          op.value = h;
-          op.textContent = h;
-          sel.appendChild(op);
+        sels.forEach((sel, idx) => {
+          sel.addEventListener("change", () => {
+            summaryGroupKeys[idx] = sel.value || "";
+            refreshSummaryTable(); // 선택 바뀌면 요약 갱신
+          });
+        });
+      }
+      function populateSummaryGroupCombos() {
+        const choices = [...headers].sort((a, b) => a.localeCompare(b));
+
+        ["summaryGroup1", "summaryGroup2", "summaryGroup3"].forEach((id) => {
+          const sel = document.getElementById(id);
+          if (!sel) return;
+          const current = sel.value;
+          sel.innerHTML = '<option value="">없음</option>';
+          choices.forEach((h) => {
+            const op = document.createElement("option");
+            op.value = h;
+            op.textContent = h;
+            sel.appendChild(op);
+          });
+          if (current && choices.includes(current)) sel.value = current;
         });
 
-        sel.addEventListener("change", (e) => {
-          summaryGroupBy = e.target.value || "";
-          // 다시 렌더링 (펼친 것들만 영향받음)
-          updateSummaryTableDisplay(latestSummaryData);
-        });
+        summaryGroupKeys = [
+          document.getElementById("summaryGroup1")?.value || "",
+          document.getElementById("summaryGroup2")?.value || "",
+          document.getElementById("summaryGroup3")?.value || "",
+        ];
       }
 
       // 파싱된 코드를 서버에 업로드 (API 경로 수정)
@@ -528,6 +557,8 @@
 
       // IFC 객체 데이터 로드 (API 경로 수정)
       // 기존 함수를 이걸로 교체
+      // IFC 객체 데이터 로드 (API 경로 수정)
+      // 기존 함수를 이걸로 "그대로" 교체하세요
       function loadIFCObjects() {
         const url = `/dd_by_ifc/api/ifc_objects/${PROJECT_ID}/`;
 
@@ -561,10 +592,17 @@
               buildCodeToObjectsMap();
             }
 
-            // UI 갱신
+            // ==== UI 갱신 ====
             updateGroupComboBoxes();
             updateColumnSelector();
             updateGroupedTable();
+
+            // ★★★ 여기 추가 ★★★
+            if (typeof populateSummaryGroupCombos === "function") {
+              populateSummaryGroupCombos();
+            }
+            if (typeof refreshSummaryTable === "function")
+              refreshSummaryTable();
 
             // 선택 유지 & 스타일 반영
             if (prevSelected.size) {
@@ -597,38 +635,44 @@
           })
           .catch((error) => {
             console.error("❌ IFC 객체 로드 실패:", error);
-            // 알림 함수가 있으면 사용
             if (typeof showNotification === "function") {
               showNotification(`IFC 객체 로드 실패: ${error.message}`, "error");
             }
             alert("IFC 객체를 로드하는데 실패했습니다: " + error.message);
-            throw error; // 상위로 에러 전달
+            throw error;
           });
       }
 
       // 요약 테이블 로드 (API 경로 수정)
+      // 요약 테이블 로드 (API 경로 수정)
       function loadSummaryTable() {
         fetch(`/dd_by_ifc/api/summary_table/${PROJECT_ID}/`)
           .then((response) => {
-            if (!response.ok) {
+            if (!response.ok)
               throw new Error(
                 `HTTP ${response.status}: ${response.statusText}`
               );
-            }
             return response.json();
           })
           .then((data) => {
-            latestSummaryData = data.summary_data; // ★ 저장
-
-            updateSummaryTableDisplay(data.summary_data);
+            latestSummaryData = data.summary_data;
             document.getElementById("summaryTotalLabel").textContent =
               "요약 총 금액: " + data.total_sum.toLocaleString("ko-KR") + " 원";
+            refreshSummaryTable(); // ← 여기!
             console.log(`✅ 요약 테이블 로드 완료`);
           })
           .catch((error) => {
             console.error("❌ 요약 테이블 로드 실패:", error);
             alert("요약 테이블을 로드하는데 실패했습니다: " + error.message);
           });
+      }
+      function refreshSummaryTable() {
+        // 그룹 선택이 모두 비어있으면 기존 방식 유지
+        if (summaryGroupKeys.every((k) => !k)) {
+          updateSummaryTableDisplay(latestSummaryData); // 기존 함수 그대로
+        } else {
+          renderAdvancedSummary(); // 새 방식
+        }
       }
 
       // 이벤트 핸들러 설정
@@ -1633,6 +1677,73 @@
           }
         }
       });
+      document.addEventListener("click", (e) => {
+        const expanderClicked = e.target.closest(".summary-expander-btn");
+        if (expanderClicked) return;
+
+        // 기본/고급 모두 '.summary-code-row'
+        const tr = e.target.closest(".summary-code-row");
+        if (!tr) return;
+        // 고급 모드면 dataset.ckey 사용
+        const ckey = tr.dataset.ckey;
+        let code = tr.dataset.code;
+
+        // 객체 GUID 목록 추출
+        let objs = [];
+        if (ckey) {
+          // 고급 모드
+          // adv 트리에서 찾아야 하지만, childRow가 이미 만들어진 경우 객체테이블에 존재
+          const childTbody = document.querySelector(
+            `.summary-child-row[data-ckey="${ckey}"] tbody`
+          );
+          if (childTbody) {
+            objs = Array.from(childTbody.querySelectorAll("tr")).map((r) => ({
+              guid: r.dataset.guid,
+            }));
+          } else {
+            // child 안 펼친 상태면 codeToObjects 사용 (전체)
+            objs = codeToObjects.get(code) || [];
+          }
+        } else {
+          objs = codeToObjects.get(code) || [];
+        }
+        const guids = objs
+          .map((o) => o.guid || o.GlobalId || o.globalId || o.GUID || o.Guid)
+          .filter(Boolean);
+
+        selectRowsByGuids(guids);
+        if (window.ifcViewer) window.ifcViewer.setSelection(guids);
+
+        document
+          .querySelectorAll(".summary-code-row")
+          .forEach((r) => r.classList.remove("selected-main"));
+        tr.classList.add("selected-main");
+
+        // 하위 테이블 하이라이트
+        if (ckey) {
+          const tbody = document.querySelector(
+            `.summary-child-row[data-ckey="${ckey}"] tbody`
+          );
+          if (tbody) {
+            tbody.querySelectorAll("tr").forEach((r) => {
+              if (guids.includes(r.dataset.guid))
+                r.classList.add("selected-row");
+              else r.classList.remove("selected-row");
+            });
+          }
+        } else if (expandedCodes.has(code)) {
+          const tbody = document.querySelector(
+            `.summary-child-row[data-code="${code}"] table.summary-child-table tbody`
+          );
+          if (tbody) {
+            tbody.querySelectorAll("tr").forEach((r) => {
+              if (guids.includes(r.dataset.guid))
+                r.classList.add("selected-row");
+              else r.classList.remove("selected-row");
+            });
+          }
+        }
+      });
 
       // 코드 파일 업로드 처리 (API 경로 수정)
       function handleCostCodeFileUpload(event) {
@@ -1773,6 +1884,240 @@
           }
         });
       }
+      // ─────────────────────────────────────────────
+      // 1) 객체 -> (선택속성1 -> 선택속성2 -> 선택속성3) -> 코드 -> 집계
+      // ─────────────────────────────────────────────
+      function renderAdvancedSummary() {
+        const tbody = document.getElementById("summaryTableBody");
+        if (!tbody) return;
+        tbody.innerHTML = "";
+
+        const tree = buildPropCodeTree(objectData, summaryGroupKeys);
+
+        // 렌더
+        let rowCount = 0;
+        function renderNode(node, depth, pathKeyPrefix) {
+          // node 형식:
+          // { _type:'group', keyName:'속성명', value:'속성값', children:{...}, totals:{...} }
+          // { _type:'code', code:'XXXX', category:'토목', totals:{...}, objects:[...] }
+
+          if (node._type === "group") {
+            const thisKey =
+              pathKeyPrefix + "|g|" + node.keyName + ":" + node.value;
+            const collapsed = !advExpanded.has(thisKey);
+            const symbol = collapsed ? "▶" : "▼";
+            // 그룹 헤더 행 (colSpan: 15)
+            const tr = document.createElement("tr");
+            tr.className = "adv-group-header";
+            const td = document.createElement("td");
+            td.colSpan = 15;
+            td.textContent = `${" ".repeat(depth * 2)}${symbol} ${
+              node.keyName
+            }: ${node.value} (금액 ${formatNumber(
+              node.totals.total_amount
+            )} 원 / 객체 ${node.totals.count}개)`;
+            tr.appendChild(td);
+            tr.addEventListener("click", () => {
+              if (collapsed) advExpanded.add(thisKey);
+              else advExpanded.delete(thisKey);
+              renderAdvancedSummary();
+            });
+            tbody.appendChild(tr);
+
+            if (!collapsed) {
+              Object.values(node.children).forEach((child) => {
+                renderNode(child, depth + 1, thisKey);
+              });
+            }
+          } else if (node._type === "code") {
+            // 코드 행
+            const codeKey = pathKeyPrefix + "|c|" + node.code;
+            const expanded = advCodeExpanded.has(codeKey);
+            const btnTxt = expanded ? "−" : "+";
+
+            const tr = document.createElement("tr");
+            tr.className = "summary-code-row";
+            tr.dataset.code = node.code;
+            tr.dataset.ckey = codeKey;
+
+            // 펼치기 버튼
+            const tdBtn = document.createElement("td");
+            tdBtn.className = "expander-col";
+            const btn = document.createElement("button");
+            btn.className = "summary-expander-btn";
+            btn.dataset.ckey = codeKey;
+            btn.textContent = btnTxt;
+            tdBtn.appendChild(btn);
+            tr.appendChild(tdBtn);
+
+            // 나머지 14개 컬럼 (공사코드/공종/명칭/규격/단위/수량/…)
+            tr.innerHTML += `
+        <td>${node.code}</td>
+        <td>${node.category || ""}</td>
+        <td>${node.name || ""}</td>
+        <td>${node.spec || ""}</td>
+        <td>${node.unit || ""}</td>
+        <td>${formatNumber(node.totals.quantity)}</td>
+        <td>${formatNumber(node.totals.material_unit_price)}</td>
+        <td>${formatNumber(node.totals.material_amount)}</td>
+        <td>${formatNumber(node.totals.labor_unit_price)}</td>
+        <td>${formatNumber(node.totals.labor_amount)}</td>
+        <td>${formatNumber(node.totals.expense_unit_price)}</td>
+        <td>${formatNumber(node.totals.expense_amount)}</td>
+        <td>${formatNumber(node.totals.total_unit_price)}</td>
+        <td>${formatNumber(node.totals.total_amount)}</td>
+      `;
+            tbody.appendChild(tr);
+
+            // 펼침 상태면 객체 리스트 테이블
+            if (expanded) {
+              const childTr = document.createElement("tr");
+              childTr.className = "summary-child-row";
+              childTr.dataset.ckey = codeKey;
+              const td = document.createElement("td");
+              td.colSpan = 15;
+
+              const wrapper = document.createElement("div");
+              wrapper.className = "summary-child-wrapper";
+              wrapper.appendChild(createNestedObjectTableForList(node.objects));
+
+              td.appendChild(wrapper);
+              childTr.appendChild(td);
+              tbody.appendChild(childTr);
+            }
+          }
+        }
+
+        Object.values(tree).forEach((rootNode) =>
+          renderNode(rootNode, 0, "root")
+        );
+      }
+
+      // 트리 구축
+      function buildPropCodeTree(objects, groupKeys) {
+        // groupKeys: ["층","Zone", ...] 와 비슷
+        // 결과는 { nodeKey : nodeObj } 상위 루트만 반환
+        const root = {};
+
+        // 요약 데이터를 계산하기 위해 latestSummaryData(전체)보다 객체 기반 집계 필요
+        // 객체 총금액이 여러 코드에 나뉘는 문제 -> **단순 균등 분배(코드 개수로 나눔)** 로 처리
+        objects.forEach((obj) => {
+          const codesStr =
+            obj.CostItems || (obj.Properties && obj.Properties.CostItems) || "";
+          if (!codesStr) return;
+          const codes = codesStr
+            .split("+")
+            .map((c) => c.trim())
+            .filter(Boolean);
+          if (!codes.length) return;
+
+          const perCodeRatio = 1 / codes.length;
+
+          // 코스트 항목 열
+          const totalsObj = extractNumericFields(obj); // 총금액 등
+
+          const propVals = groupKeys.map((k) => getPropVal(obj, k));
+          // 경로 타고 들어가며 노드 생성
+          let container = root;
+          groupKeys.forEach((keyName, idx) => {
+            if (!keyName) return; // 빈 값이면 스킵
+            const val = propVals[idx] ?? "N/A";
+            const gKey = `${keyName}:${val}`;
+            if (!container[gKey]) {
+              container[gKey] = {
+                _type: "group",
+                keyName,
+                value: val,
+                totals: initTotals(),
+                children: {},
+              };
+            }
+            // 누계
+            addTotals(container[gKey].totals, totalsObj);
+            container = container[gKey].children;
+          });
+
+          // 코드 단위 노드
+          codes.forEach((code) => {
+            const codeKey = "code:" + code;
+            if (!container[codeKey]) {
+              const cinfo = codeData[code] || {};
+              container[codeKey] = {
+                _type: "code",
+                code,
+                category: cinfo["공종"] || "",
+                name: cinfo["명칭"] || "",
+                spec: cinfo["규격"] || "",
+                unit: cinfo["단위"] || "",
+                totals: initTotals(),
+                objects: [],
+              };
+            }
+
+            // 코드 노드에 균등분배하여 합산
+            const portion = scaleTotals(totalsObj, perCodeRatio);
+            addTotals(container[codeKey].totals, portion);
+
+            // 객체 push
+            container[codeKey].objects.push(obj);
+          });
+        });
+
+        return root;
+      }
+
+      // 숫자 필드 추출 (필요시 필드명 조정)
+      function extractNumericFields(obj) {
+        // 서버가 내려준 objectData에 어떤 이름으로 들어있는지 그대로 사용
+        return {
+          quantity: +obj["수량"] || 0,
+          material_unit_price: +obj["재료비단가"] || 0,
+          material_amount: +obj["재료비"] || 0,
+          labor_unit_price: +obj["노무비단가"] || 0,
+          labor_amount: +obj["노무비"] || 0,
+          expense_unit_price: +obj["경비단가"] || 0,
+          expense_amount: +obj["경비"] || 0,
+          total_unit_price: +obj["합계단가"] || 0,
+          total_amount: +obj["총금액"] || 0,
+          count: 1,
+        };
+      }
+      function initTotals() {
+        return {
+          quantity: 0,
+          material_unit_price: 0,
+          material_amount: 0,
+          labor_unit_price: 0,
+          labor_amount: 0,
+          expense_unit_price: 0,
+          expense_amount: 0,
+          total_unit_price: 0,
+          total_amount: 0,
+          count: 0,
+        };
+      }
+      function addTotals(target, src) {
+        Object.keys(target).forEach((k) => {
+          target[k] += src[k] || 0;
+        });
+      }
+      function scaleTotals(src, ratio) {
+        const out = {};
+        Object.keys(src).forEach((k) => {
+          out[k] = src[k] * ratio;
+        });
+        return out;
+      }
+
+      function getPropVal(obj, key) {
+        if (!key) return undefined;
+        if (obj[key] !== undefined) return obj[key];
+        if (obj.Properties && obj.Properties[key] !== undefined)
+          return obj.Properties[key];
+        if (obj.Quantities && obj.Quantities[key] !== undefined)
+          return obj.Quantities[key];
+        return "N/A";
+      }
 
       // 하위 객체테이블 생성
       function createNestedObjectTable(code) {
@@ -1912,6 +2257,93 @@
         // 다시 렌더링
         updateSummaryTableDisplay(latestSummaryData);
       });
+
+      // 기존 버튼 토글 핸들러 유지 + 고급요약용 분기
+      document.addEventListener("click", (e) => {
+        const btn = e.target.closest(".summary-expander-btn");
+        if (!btn) return;
+
+        // 고급 요약 모드인지 확인
+        const ckey = btn.dataset.ckey;
+        if (ckey) {
+          // 고급요약 코드행
+          if (advCodeExpanded.has(ckey)) advCodeExpanded.delete(ckey);
+          else advCodeExpanded.add(ckey);
+          renderAdvancedSummary();
+          return;
+        }
+
+        // 기존 기본요약 모드
+        const code = btn.dataset.code;
+        if (!code) return;
+        if (expandedCodes.has(code)) expandedCodes.delete(code);
+        else expandedCodes.add(code);
+        updateSummaryTableDisplay(latestSummaryData);
+      });
+
+      function createNestedObjectTableForList(objs) {
+        const cols =
+          visibleHeaders && visibleHeaders.length
+            ? visibleHeaders
+            : [
+                "GlobalId",
+                "Name",
+                "IfcClass",
+                "SpatialContainer",
+                "총금액",
+                "CostItems",
+              ];
+
+        const table = document.createElement("table");
+        table.className = "summary-child-table";
+
+        const thead = document.createElement("thead");
+        const hr = document.createElement("tr");
+        cols.forEach((h) => {
+          const th = document.createElement("th");
+          th.textContent = h.split(".").pop();
+          hr.appendChild(th);
+        });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+
+        const tbody = document.createElement("tbody");
+        const getVal = (o, k) => {
+          let v = o[k];
+          if (v === undefined && o.Quantities && o.Quantities[k] !== undefined)
+            v = o.Quantities[k];
+          if (v === undefined && o.Properties && o.Properties[k] !== undefined)
+            v = o.Properties[k];
+          return v;
+        };
+        objs.forEach((obj) => {
+          const tr = document.createElement("tr");
+          const guid =
+            obj.GlobalId || obj.globalId || obj.GUID || obj.Guid || "";
+          tr.dataset.guid = guid;
+          cols.forEach((h) => {
+            let v = getVal(obj, h);
+            if (typeof v === "number") v = formatNumber(v);
+            const td = document.createElement("td");
+            td.textContent = v ?? "";
+            tr.appendChild(td);
+          });
+          tr.addEventListener("click", () => {
+            if (guid) {
+              selectRowsByGuids([guid]);
+              if (window.ifcViewer) window.ifcViewer.setSelection([guid]);
+              tbody
+                .querySelectorAll("tr")
+                .forEach((r) => r.classList.remove("selected-row"));
+              tr.classList.add("selected-row");
+            }
+          });
+          tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        return table;
+      }
 
       // 숫자 콤마/소수점 포맷 유틸
       function formatNumber(val) {
@@ -2970,6 +3402,22 @@
       .child-group-header {
         background: #f3f3f3 !important;
         font-weight: bold;
+      }
+      /* Summary main row 선택 표시 */
+      .summary-code-row.selected-main {
+        background: #ffe8a1 !important;
+      }
+      .summary-group-bar label {
+        margin-right: 8px;
+      }
+      .child-group-header {
+        background: #f3f3f3 !important;
+        font-weight: bold;
+      }
+      .adv-group-header {
+        background: #ddd !important;
+        font-weight: bold;
+        cursor: pointer;
       }
     </style>
   </body>
